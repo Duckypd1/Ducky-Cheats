@@ -1,6 +1,3 @@
-/**
- * file: src/pages/Profile.tsx
- */
 import React, { useEffect, useState } from "react";
 import { User, Mail, Shield, Camera, Save, Lock, CalendarDays, ShieldCheck, LayoutDashboard, X, UploadCloud } from "lucide-react";
 import { supabase } from "../lib/supabase";
@@ -9,6 +6,7 @@ import { Link } from "react-router-dom";
 export function Profile() {
   const [user, setUser] = useState<any>(null);
   const [role, setRole] = useState<string | null>(null); // State lưu quyền Admin
+  const [profileData, setProfileData] = useState<any>(null); // THÊM MỚI: State lưu toàn bộ dữ liệu profile
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
 
@@ -24,13 +22,15 @@ export function Profile() {
         if (error) throw error;
         setUser(user);
 
-        // Lấy quyền (role) từ bảng profiles
+        // Lấy quyền (role) và tất cả dữ liệu từ bảng profiles
         if (user) {
           const { data: profile } = await supabase
             .from('profiles')
-            .select('role')
+            .select('*') // THAY ĐỔI: Lấy tất cả các cột thay vì chỉ lấy 'role'
             .eq('id', user.id)
             .single();
+            
+          setProfileData(profile); // THÊM MỚI: Lưu lại profile data
           setRole(profile?.role || 'user');
 
           // Kéo Avatar đã lưu từ LocalStorage
@@ -93,8 +93,8 @@ export function Profile() {
     );
   }
 
-  // Lấy tên hiển thị từ email
-  const displayName = user.email ? user.email.split('@')[0] : "Thành viên";
+  // THÊM MỚI: Logic hiển thị tên ưu tiên tên từ Admin (display_name)
+  const displayName = profileData?.display_name || (user?.email ? user.email.split('@')[0] : "Thành viên");
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
