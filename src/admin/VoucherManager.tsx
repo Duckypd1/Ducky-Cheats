@@ -1,47 +1,52 @@
 import React, { useState, useEffect } from 'react';
-import { Ticket, Send, Gift, Trash2 } from 'lucide-react';
+import { Ticket, Gift, Trash2, Loader2 } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 export function VoucherManager() {
   const [code, setCode] = useState('');
   const [discount, setDiscount] = useState('');
   const [quantity, setQuantity] = useState('');
-  
-  // Lấy danh sách voucher từ LocalStorage
-  const [vouchers, setVouchers] = useState<any[]>(() => {
-    const saved = localStorage.getItem('ducky_vouchers');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [vouchers, setVouchers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  // Lưu lại mỗi khi danh sách thay đổi
+  const fetchVouchers = async () => {
+    const { data } = await supabase.from('ducky_vouchers').select('*').order('created_at', { ascending: false });
+    if (data) setVouchers(data);
+  };
+
   useEffect(() => {
-    localStorage.setItem('ducky_vouchers', JSON.stringify(vouchers));
-  }, [vouchers]);
+    fetchVouchers();
+  }, []);
 
-  const handleCreateVoucher = () => {
+  const handleCreateVoucher = async () => {
     if (!code || !discount || !quantity) {
       alert("Vui lòng điền đầy đủ thông tin!");
       return;
     }
+    setLoading(true);
+    try {
+      const newVoucher = {
+        code: code.toUpperCase(),
+        discount: Number(discount),
+        quantity: Number(quantity)
+      };
+      const { error } = await supabase.from('ducky_vouchers').insert(newVoucher);
+      if (error) throw error;
 
-    const newVoucher = {
-      id: Date.now().toString(),
-      code: code.toUpperCase(),
-      discount: Number(discount),
-      quantity: Number(quantity)
-    };
-
-    setVouchers([...vouchers, newVoucher]);
-    alert(`Đã tạo thành công Voucher: ${newVoucher.code} (Giảm ${newVoucher.discount}%)`);
-    
-    // Reset form
-    setCode('');
-    setDiscount('');
-    setQuantity('');
+      alert(`Đã tạo thành công Voucher: ${newVoucher.code} (Giảm ${newVoucher.discount}%)`);
+      setCode(''); setDiscount(''); setQuantity('');
+      fetchVouchers();
+    } catch (err: any) {
+      alert("Lỗi tạo Voucher: " + err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (window.confirm("Xóa mã giảm giá này?")) {
-      setVouchers(vouchers.filter(v => v.id !== id));
+      await supabase.from('ducky_vouchers').delete().eq('id', id);
+      fetchVouchers();
     }
   };
 
@@ -95,14 +100,14 @@ export function VoucherManager() {
 
         <button 
           onClick={handleCreateVoucher}
-          className="w-full bg-amber-500 hover:bg-amber-600 text-white py-4 rounded-2xl font-bold transition-all shadow-lg shadow-amber-100 flex items-center justify-center gap-2"
+          disabled={loading}
+          className="w-full bg-amber-500 hover:bg-amber-600 disabled:bg-amber-300 text-white py-4 rounded-2xl font-bold transition-all shadow-lg shadow-amber-100 flex items-center justify-center gap-2"
         >
-          <Ticket className="w-5 h-5" />
+          {loading ? <Loader2 className="w-5 h-5 animate-spin"/> : <Ticket className="w-5 h-5" />}
           Phát hành Voucher
         </button>
       </div>
 
-      {/* Hiển thị danh sách Voucher đang có */}
       {vouchers.length > 0 && (
         <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm mt-6">
           <h3 className="font-bold text-gray-900 mb-4">Voucher đang hoạt động</h3>

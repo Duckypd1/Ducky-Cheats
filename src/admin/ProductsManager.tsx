@@ -1,25 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { Edit3, Trash2, Plus, CheckCircle2, X } from 'lucide-react';
+import { Edit3, Trash2, Plus, CheckCircle2, X, Loader2 } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 
 export function ProductsManager() {
-  // 1. Đồng bộ dữ liệu với LocalStorage để trang chủ nhận được giá mới
-  const [products, setProducts] = useState<any[]>(() => {
-    const saved = localStorage.getItem('ducky_packages');
-    if (saved) return JSON.parse(saved);
-    return [
-      { id: "1d", name: "1 Ngày", price: 20000, popular: false },
-      { id: "7d", name: "7 Ngày", price: 100000, popular: true },
-      { id: "30d", name: "30 Ngày", price: 300000, popular: false },
-    ];
-  });
-
-  // 2. Tự động lưu vào bộ nhớ chung mỗi khi bạn chỉnh sửa/xóa/thêm
-  useEffect(() => {
-    localStorage.setItem('ducky_packages', JSON.stringify(products));
-  }, [products]);
-
+  const [products, setProducts] = useState<any[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formData, setFormData] = useState<any>({ id: null, name: "", price: 0, popular: false });
+  const [loading, setLoading] = useState(false);
+
+  const fetchPackages = async () => {
+    const { data } = await supabase.from('ducky_packages').select('*').order('price', { ascending: true });
+    if (data) setProducts(data);
+  };
+
+  useEffect(() => {
+    fetchPackages();
+  }, []);
 
   const handleOpenModal = (product: any = null) => {
     if (product) {
@@ -30,23 +26,36 @@ export function ProductsManager() {
     setIsModalOpen(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formData.name || formData.price <= 0) {
       alert("Vui lòng nhập tên gói và giá hợp lệ!");
       return;
     }
-
-    if (formData.id) {
-      setProducts(products.map(p => p.id === formData.id ? formData : p));
-    } else {
-      setProducts([...products, { ...formData, id: Date.now().toString() }]);
+    setLoading(true);
+    try {
+      const payload = {
+        id: formData.id || Date.now().toString(),
+        name: formData.name,
+        price: formData.price,
+        ctv_price: Math.floor(formData.price * 0.7), // Tự động tính giá CTV = 70% giá gốc
+        popular: formData.popular || false
+      };
+      const { error } = await supabase.from('ducky_packages').upsert(payload);
+      if (error) throw error;
+      
+      setIsModalOpen(false);
+      fetchPackages();
+    } catch (err: any) {
+      alert("Lỗi lưu gói: " + err.message);
+    } finally {
+      setLoading(false);
     }
-    setIsModalOpen(false);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (window.confirm("Bạn có chắc chắn muốn xóa gói này không?")) {
-      setProducts(products.filter(p => p.id !== id));
+      await supabase.from('ducky_packages').delete().eq('id', id);
+      fetchPackages();
     }
   };
 
@@ -76,7 +85,7 @@ export function ProductsManager() {
             {products.map((p) => (
               <tr key={p.id} className="hover:bg-gray-50/50 transition-colors">
                 <td className="p-4 font-bold text-gray-900 text-sm">Ducky Cheat AOV VIP ({p.name})</td>
-                <td className="p-4 font-bold text-indigo-600 text-sm">{p.price.toLocaleString('vi-VN')}đ</td>
+                <td className="p-4 font-bold text-indigo-600 text-sm">{Number(p.price).toLocaleString('vi-VN')}đ</td>
                 <td className="p-4 text-center">
                   <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-green-50 text-green-600 text-xs font-bold border border-green-100">
                     <CheckCircle2 className="w-3 h-3" /> Đang bán
@@ -102,7 +111,6 @@ export function ProductsManager() {
         </table>
       </div>
 
-      {/* --- MODAL THÊM / SỬA SẢN PHẨM --- */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setIsModalOpen(false)}></div>
@@ -156,8 +164,10 @@ export function ProductsManager() {
             <div className="p-6 border-t border-gray-100 bg-gray-50/50">
               <button 
                 onClick={handleSave}
-                className="w-full bg-[#4F46E5] hover:bg-indigo-600 text-white py-3.5 rounded-xl font-bold transition-all shadow-md"
+                disabled={loading}
+                className="w-full bg-[#4F46E5] hover:bg-indigo-600 disabled:bg-indigo-300 text-white py-3.5 rounded-xl font-bold transition-all shadow-md flex items-center justify-center gap-2"
               >
+                {loading ? <Loader2 className="w-5 h-5 animate-spin"/> : null}
                 Lưu lại
               </button>
             </div>
