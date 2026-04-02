@@ -26,7 +26,7 @@ export function Home() {
   const [userId, setUserId] = useState<string | null>(null);
   const [role, setRole] = useState<string>("user"); 
   
-  // ĐỔI SANG BẢNG GIÁ RIÊNG CHO TỪNG GÓI
+  // BẢNG GIÁ RIÊNG CHO TỪNG GÓI
   const [customPrices, setCustomPrices] = useState<Record<string, number>>({}); 
   
   const [totalStock, setTotalStock] = useState<number>(0);
@@ -46,16 +46,16 @@ export function Home() {
     setCurrentMonthStr(`Tháng ${String(date.getMonth() + 1).padStart(2, '0')}`);
 
     const loadData = async () => {
-      // 1. KHỞI TẠO KHO KEY
-      let savedKeys = JSON.parse(localStorage.getItem('ducky_keys') || "null");
-      if (!savedKeys) {
-        savedKeys = []; 
-        localStorage.setItem('ducky_keys', JSON.stringify(savedKeys));
-      }
+      // 1. KÉO KHO KEY TRỰC TIẾP TỪ ĐÁM MÂY SUPABASE (Bỏ hoàn toàn LocalStorage)
+      const { data: dbKeys, error: keyErr } = await supabase
+        .from('ducky_keys')
+        .select('*')
+        .eq('status', 'available');
+        
+      const availableKeys = dbKeys || [];
+      setTotalStock(availableKeys.length);
 
-      setTotalStock(savedKeys.filter((k: any) => k.status === 'available').length);
-
-      // 2. KÉO GÓI
+      // 2. KÉO GÓI SẢN PHẨM TỪ HỆ THỐNG
       const savedPackages = localStorage.getItem('ducky_packages');
       const loadedPackages = savedPackages ? JSON.parse(savedPackages) : [
         { id: "1d", name: "1 Ngày", price: 20000, ctvPrice: 15000, popular: false },
@@ -63,9 +63,10 @@ export function Home() {
         { id: "30d", name: "30 Ngày", price: 300000, ctvPrice: 200000, popular: false },
       ];
       
+      // Tính lại số dư Key cho từng gói từ Đám Mây
       const packagesWithStock = loadedPackages.map((pkg: any) => ({
         ...pkg,
-        stock: savedKeys.filter((k: any) => k.packageId === pkg.id && k.status === 'available').length
+        stock: availableKeys.filter((k: any) => k.package_id === pkg.id || k.packageId === pkg.id).length
       }));
 
       setPackages(packagesWithStock);
@@ -85,7 +86,6 @@ export function Home() {
         const savedAvatar = localStorage.getItem(`ducky_avatar_${user.id}`);
         if (savedAvatar) userAvatar = savedAvatar;
 
-        // CẬP NHẬT SELECT: Lấy custom_prices (bảng giá JSONB)
         const { data } = await supabase.from('profiles').select('balance, role, custom_prices').eq('id', user.id).single();
         if (data) {
           userBalance = data.balance || 0;
@@ -100,13 +100,18 @@ export function Home() {
       if (urlParams.get('status') === 'success' || urlParams.get('code') === '00' || urlParams.get('cancel') === 'false') {
         const pendingOrder = JSON.parse(localStorage.getItem('ducky_pending_qr_order') || "null");
         if (pendingOrder) {
-          let keys = JSON.parse(localStorage.getItem('ducky_keys') || "[]");
-          const keyIdx = keys.findIndex((k: any) => k.packageId === pendingOrder.id && k.status === 'available');
-          if (keyIdx !== -1) {
-            const keyObj = keys[keyIdx];
-            keys[keyIdx].status = 'sold';
-            localStorage.setItem('ducky_keys', JSON.stringify(keys));
-            const newOrder = { id: "ORD-" + Math.floor(Math.random()*90000), product: `HyperCheat (${pendingOrder.name})`, amount: pendingOrder.price.toLocaleString() + "đ", status: "completed", date: new Date().toLocaleString('vi-VN'), key: keyObj.key_code };
+          
+          // Xin 1 Key từ Đám Mây Supabase
+          const { data: keysToAssign } = await supabase.from('ducky_keys')
+            .select('*').eq('package_id', pendingOrder.id).eq('status', 'available').limit(1);
+            
+          if (keysToAssign && keysToAssign.length > 0) {
+            const assignedKey = keysToAssign[0];
+            
+            // Đốt Key trên mạng
+            await supabase.from('ducky_keys').update({ status: 'sold' }).eq('id', assignedKey.id);
+            
+            const newOrder = { id: "ORD-" + Math.floor(Math.random()*90000), product: `HyperCheat (${pendingOrder.name})`, amount: pendingOrder.price.toLocaleString() + "đ", status: "completed", date: new Date().toLocaleString('vi-VN'), key: assignedKey.key_code };
             localStorage.setItem('ducky_orders', JSON.stringify([newOrder, ...JSON.parse(localStorage.getItem('ducky_orders') || "[]")]));
             localStorage.removeItem('ducky_pending_qr_order');
             window.history.replaceState({}, '', window.location.pathname);
@@ -182,20 +187,15 @@ export function Home() {
     }
   };
 
-  // LOGIC LẤY GIÁ THEO TỪNG GÓI
+  // LOGIC LẤY GIÁ TỪ BẢNG GIÁ RIÊNG (VIP)
   const getDisplayOriginalPrice = () => {
     if (!selectedPackage) return 0;
-    
-    // Ưu tiên 1: Giá riêng cứng được thiết lập cho gói này
     if (customPrices && customPrices[selectedPackage.id] > 0) {
       return customPrices[selectedPackage.id];
     }
-    
-    // Ưu tiên 2: Nếu là CTV
     if (role === 'ctv') {
       return selectedPackage.ctvPrice || Math.floor(selectedPackage.price * 0.7);
     }
-    
     return selectedPackage.price;
   };
 
@@ -203,15 +203,19 @@ export function Home() {
   const discountAmount = (originalPrice * appliedDiscount) / 100;
   const finalPrice = originalPrice - discountAmount;
 
-  // --- XỬ LÝ THANH TOÁN & RÚT KEY THẬT ---
+  // --- XỬ LÝ THANH TOÁN (LẤY KEY TỪ SUPABASE THAY VÌ LOCALSTORAGE) ---
   const handleCheckout = async () => {
     if (!selectedPackage) return;
 
-    let currentKeys = JSON.parse(localStorage.getItem('ducky_keys') || "[]");
-    const availableKeyIndex = currentKeys.findIndex((k: any) => k.packageId === selectedPackage.id && k.status === 'available');
+    // Tìm 1 Key có sẵn từ Supabase
+    const { data: keysToAssign } = await supabase.from('ducky_keys')
+      .select('*')
+      .eq('package_id', selectedPackage.id)
+      .eq('status', 'available')
+      .limit(1);
 
-    if (availableKeyIndex === -1) {
-      alert("Rất tiếc, gói này vừa hết key! Vui lòng chọn gói khác.");
+    if (!keysToAssign || keysToAssign.length === 0) {
+      alert("Rất tiếc, gói này vừa có khách mua mất key! Vui lòng chọn gói khác.");
       return; 
     }
 
@@ -251,9 +255,9 @@ export function Home() {
       }
     }
 
-    const assignedKey = currentKeys[availableKeyIndex];
-    currentKeys[availableKeyIndex].status = 'sold';
-    localStorage.setItem('ducky_keys', JSON.stringify(currentKeys)); 
+    // Đốt key trên Database
+    const assignedKey = keysToAssign[0];
+    await supabase.from('ducky_keys').update({ status: 'sold' }).eq('id', assignedKey.id);
 
     const orderId = "ORD-" + Math.floor(10000 + Math.random() * 90000);
     const now = new Date();
@@ -403,10 +407,9 @@ export function Home() {
                     <div className="space-y-3">
                       {packages.map((pkg) => {
                         const isOutOfStock = pkg.stock === 0;
-                        const isCTV = role === 'ctv';
-                        
                         const pkgCustomPrice = customPrices?.[pkg.id];
                         const hasCustomPrice = pkgCustomPrice && pkgCustomPrice > 0;
+                        const isCTV = role === 'ctv';
                         
                         let displayPrice = pkg.price;
                         if (hasCustomPrice) {
