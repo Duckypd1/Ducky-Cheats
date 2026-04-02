@@ -1,31 +1,52 @@
 import React, { useState, useEffect } from 'react';
-import { Key, Database, Save, CheckCircle2, Trash2 } from 'lucide-react';
+import { Key, Database, Save, CheckCircle2, Trash2, Loader2 } from 'lucide-react';
+import { supabase } from '../lib/supabase'; // THÊM MỚI: Import thư viện Supabase
 
 export function KeyManager() {
   const [keysInput, setKeysInput] = useState("");
   const [packages, setPackages] = useState<any[]>([]);
   const [selectedPackageId, setSelectedPackageId] = useState<string>("");
   const [keysList, setKeysList] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false); // THÊM MỚI: Trạng thái tải dữ liệu
+
+  // Hàm kéo danh sách Key từ Supabase
+  const fetchKeys = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('ducky_keys')
+        .select('*')
+        .order('created_at', { ascending: false }); // Xếp key mới lên đầu
+        
+      if (error) throw error;
+      if (data) setKeysList(data);
+    } catch (err: any) {
+      console.error("Lỗi tải key:", err.message);
+    }
+  };
 
   // Đọc danh sách Gói và Key từ bộ nhớ khi mở trang
   useEffect(() => {
-    // 1. Tải danh sách Gói sản phẩm
+    // 1. Tải danh sách Gói sản phẩm (Fallback giống hệt trang Home)
     const savedPkgs = localStorage.getItem('ducky_packages');
+    let loadedPackages = [];
     if (savedPkgs) {
-      const parsed = JSON.parse(savedPkgs);
-      setPackages(parsed);
-      if (parsed.length > 0) setSelectedPackageId(parsed[0].id);
+      loadedPackages = JSON.parse(savedPkgs);
+    } else {
+      loadedPackages = [
+        { id: "1d", name: "1 Ngày", price: 20000, ctvPrice: 15000 },
+        { id: "7d", name: "7 Ngày", price: 100000, ctvPrice: 70000 },
+        { id: "30d", name: "30 Ngày", price: 300000, ctvPrice: 200000 },
+      ];
     }
+    setPackages(loadedPackages);
+    if (loadedPackages.length > 0) setSelectedPackageId(loadedPackages[0].id);
 
-    // 2. Tải danh sách Key trong kho
-    const savedKeys = localStorage.getItem('ducky_keys');
-    if (savedKeys) {
-      setKeysList(JSON.parse(savedKeys));
-    }
+    // 2. Tải danh sách Key thẳng từ Đám Mây Supabase
+    fetchKeys();
   }, []);
 
-  // Xử lý nạp key vào kho
-  const handleSaveKeys = () => {
+  // Xử lý nạp key vào kho (Bắn lên Supabase)
+  const handleSaveKeys = async () => {
     if (!selectedPackageId) {
       alert("Vui lòng chọn gói sản phẩm!");
       return;
@@ -35,29 +56,46 @@ export function KeyManager() {
     const keyArray = keysInput.split('\n').filter(k => k.trim() !== '');
     if (keyArray.length === 0) return;
 
-    // Tạo các object key mới
-    const newKeys = keyArray.map(code => ({
-      id: "key-" + Date.now() + "-" + Math.random().toString(36).substr(2, 5), // ID ngẫu nhiên
-      packageId: selectedPackageId,
-      key_code: code.trim(),
-      status: 'available' // Mặc định là chưa bán
-    }));
+    setLoading(true);
 
-    // Cập nhật vào danh sách và lưu xuống LocalStorage
-    const updatedKeys = [...newKeys, ...keysList];
-    setKeysList(updatedKeys);
-    localStorage.setItem('ducky_keys', JSON.stringify(updatedKeys));
+    try {
+      // Tạo các object key mới theo chuẩn Database (dùng package_id)
+      const newKeys = keyArray.map(code => ({
+        package_id: selectedPackageId, 
+        key_code: code.trim(),
+        status: 'available' 
+      }));
 
-    alert(`Thành công! Đã nạp ${newKeys.length} key vào kho.`);
-    setKeysInput(""); // Làm trống ô nhập
+      // Bắn toàn bộ mảng Key lên bảng ducky_keys trên Supabase
+      const { error } = await supabase.from('ducky_keys').insert(newKeys);
+      
+      if (error) throw error;
+
+      alert(`Thành công! Đã nạp ${newKeys.length} key vào Đám mây.`);
+      setKeysInput(""); // Làm trống ô nhập
+      fetchKeys(); // Tải lại danh sách key mới nhất từ mạng
+    } catch (err: any) {
+      alert("❌ Lỗi khi lưu key lên hệ thống: " + err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // Xử lý xóa key
-  const handleDeleteKey = (id: string) => {
+  // Xử lý xóa key (Xóa trực tiếp trên Supabase)
+  const handleDeleteKey = async (id: string) => {
     if (window.confirm("Bạn có chắc chắn muốn xóa key này khỏi hệ thống?")) {
-      const updatedKeys = keysList.filter(k => k.id !== id);
-      setKeysList(updatedKeys);
-      localStorage.setItem('ducky_keys', JSON.stringify(updatedKeys));
+      setLoading(true);
+      try {
+        const { error } = await supabase.from('ducky_keys').delete().eq('id', id);
+        if (error) throw error;
+        
+        // Cập nhật lại danh sách hiển thị
+        setKeysList(prev => prev.filter(k => k.id !== id));
+      } catch (err: any) {
+        alert("❌ Lỗi khi xóa key: " + err.message);
+      } finally {
+        setLoading(false);
+      }
     }
   };
 
@@ -71,7 +109,7 @@ export function KeyManager() {
     <div className="max-w-5xl space-y-6">
       <h2 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
         <Database className="w-6 h-6 text-indigo-600" />
-        Quản lý Kho Key
+        Quản lý Kho Key Đám Mây
       </h2>
 
       {/* --- KHU VỰC 1: NHẬP KEY MỚI --- */}
@@ -107,11 +145,11 @@ export function KeyManager() {
 
         <button 
           onClick={handleSaveKeys}
-          disabled={!keysInput.trim()}
+          disabled={!keysInput.trim() || loading}
           className="w-full bg-[#4F46E5] hover:bg-indigo-600 disabled:bg-gray-300 disabled:cursor-not-allowed text-white py-3.5 rounded-xl font-bold transition-all shadow-md flex items-center justify-center gap-2"
         >
-          <Save className="w-5 h-5" />
-          Nạp vào kho
+          {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
+          {loading ? "Đang đẩy lên mây..." : "Nạp vào kho"}
         </button>
       </div>
 
@@ -122,6 +160,12 @@ export function KeyManager() {
             <Key className="w-5 h-5 text-indigo-500" />
             Danh sách Key hiện có ({keysList.length})
           </h3>
+          <button 
+            onClick={fetchKeys} 
+            className="text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition-colors"
+          >
+            Làm mới
+          </button>
         </div>
 
         <div className="overflow-x-auto">
@@ -141,7 +185,7 @@ export function KeyManager() {
                     {k.key_code}
                   </td>
                   <td className="p-4 font-semibold text-gray-900 text-sm">
-                    Key {getPackageName(k.packageId)}
+                    Key {getPackageName(k.package_id || k.packageId)} {/* Hỗ trợ cả chuẩn ID cũ và mới */}
                   </td>
                   <td className="p-4 text-center">
                     {k.status === 'available' ? (
@@ -157,7 +201,8 @@ export function KeyManager() {
                   <td className="p-4 text-right">
                     <button 
                       onClick={() => handleDeleteKey(k.id)}
-                      className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                      disabled={loading}
+                      className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all disabled:opacity-50"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
