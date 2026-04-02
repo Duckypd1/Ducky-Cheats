@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Copy, Check, X, Key } from "lucide-react";
+import { Copy, Check, X, Key, Download } from "lucide-react";
 
 const initialMockOrders = [
   {
@@ -83,13 +83,24 @@ export function Orders() {
                   <td className="py-4 text-sm text-gray-500">{order.date}</td>
                   <td className="py-4 text-right">
                     {order.status === "completed" && (
-                      <button 
-                        onClick={() => setSelectedOrder(order)}
-                        className="inline-flex items-center gap-1.5 bg-indigo-50 text-[#4F46E5] hover:bg-indigo-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
-                      >
-                        <Key className="w-4 h-4" />
-                        Xem Key
-                      </button>
+                      <div className="flex items-center justify-end gap-2">
+                        <button 
+                          onClick={() => setSelectedOrder(order)}
+                          className="inline-flex items-center gap-1.5 bg-indigo-50 text-[#4F46E5] hover:bg-indigo-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+                        >
+                          <Key className="w-4 h-4" />
+                          Xem Key
+                        </button>
+                        <a 
+                          href="https://hypercheats.vn/public/download/download.html?game=lienquan"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 bg-green-50 text-green-600 hover:bg-green-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+                        >
+                          <Download className="w-4 h-4" />
+                          Tải Tool
+                        </a>
+                      </div>
                     )}
                   </td>
                 </tr>
@@ -122,13 +133,24 @@ export function Orders() {
                 <p className="text-xs text-gray-500">{order.date}</p>
               </div>
               {order.status === "completed" && (
-                <button 
-                  onClick={() => setSelectedOrder(order)}
-                  className="w-full flex items-center justify-center gap-2 bg-indigo-50 text-[#4F46E5] hover:bg-indigo-100 py-2 rounded-xl text-sm font-medium transition-colors"
-                >
-                  <Key className="w-4 h-4" />
-                  Xem Key
-                </button>
+                <div className="flex items-center gap-2 mt-4">
+                  <button 
+                    onClick={() => setSelectedOrder(order)}
+                    className="flex-1 flex items-center justify-center gap-2 bg-indigo-50 text-[#4F46E5] hover:bg-indigo-100 py-2 rounded-xl text-sm font-medium transition-colors"
+                  >
+                    <Key className="w-4 h-4" />
+                    Xem Key
+                  </button>
+                  <a 
+                    href="https://hypercheats.vn/public/download/download.html?game=lienquan"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 flex items-center justify-center gap-2 bg-green-50 text-green-600 hover:bg-green-100 py-2 rounded-xl text-sm font-medium transition-colors"
+                  >
+                    <Download className="w-4 h-4" />
+                    Tải Tool
+                  </a>
+                </div>
               )}
             </div>
           ))}
@@ -178,9 +200,12 @@ export function Orders() {
 
             <div className="p-6 border-t border-gray-100 bg-gray-50/50">
               <a 
-                href="#"
+                href="https://hypercheats.vn/public/download/download.html?game=lienquan"
+                target="_blank"
+                rel="noopener noreferrer"
                 className="w-full bg-[#4F46E5] hover:bg-indigo-600 text-white py-3.5 rounded-xl font-semibold transition-colors shadow-sm flex items-center justify-center gap-2"
               >
+                <Download className="w-5 h-5" />
                 Tải Tool Ducky Cheat
               </a>
             </div>
