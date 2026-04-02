@@ -24,8 +24,11 @@ export function Home() {
   const [paymentMethod, setPaymentMethod] = useState("wallet");
   const [balance, setBalance] = useState<number>(0);
   const [userId, setUserId] = useState<string | null>(null);
-  const [role, setRole] = useState<string>("user"); // THÊM MỚI: Quyền tài khoản
-  const [customDiscount, setCustomDiscount] = useState<number>(0); // THÊM MỚI: Chiết khấu riêng (VIP)
+  const [role, setRole] = useState<string>("user"); 
+  
+  // ĐỔI SANG BẢNG GIÁ RIÊNG CHO TỪNG GÓI
+  const [customPrices, setCustomPrices] = useState<Record<string, number>>({}); 
+  
   const [totalStock, setTotalStock] = useState<number>(0);
   
   const [voucherCodeInput, setVoucherCodeInput] = useState("");
@@ -34,7 +37,6 @@ export function Home() {
   const [currentMonthStr, setCurrentMonthStr] = useState("");
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
 
-  // THÊM MỚI: State loading để xử lý thanh toán QR
   const [loadingPay, setLoadingPay] = useState(false);
 
   const navigate = useNavigate();
@@ -47,13 +49,13 @@ export function Home() {
       // 1. KHỞI TẠO KHO KEY
       let savedKeys = JSON.parse(localStorage.getItem('ducky_keys') || "null");
       if (!savedKeys) {
-        savedKeys = []; // Xóa bỏ mock data cũ, để mảng rỗng
+        savedKeys = []; 
         localStorage.setItem('ducky_keys', JSON.stringify(savedKeys));
       }
 
       setTotalStock(savedKeys.filter((k: any) => k.status === 'available').length);
 
-      // 2. KÉO GÓI (Tích hợp thêm giá sỉ mặc định cho CTV)
+      // 2. KÉO GÓI
       const savedPackages = localStorage.getItem('ducky_packages');
       const loadedPackages = savedPackages ? JSON.parse(savedPackages) : [
         { id: "1d", name: "1 Ngày", price: 20000, ctvPrice: 15000, popular: false },
@@ -71,7 +73,7 @@ export function Home() {
       const availablePkg = packagesWithStock.find((p: any) => p.stock > 0);
       setSelectedPackage(availablePkg || null);
 
-      // 3. LẤY DATA THẬT CỦA USER (Tích hợp thêm quyền Role, Avatar và Chiết khấu riêng)
+      // 3. LẤY DATA THẬT CỦA USER
       let userBalance = 0;
       let userEmail = "";
       let userAvatar = "";
@@ -80,21 +82,20 @@ export function Home() {
         setUserId(user.id);
         userEmail = user.email || "";
         
-        // Kéo ảnh đại diện từ máy lên nếu có
         const savedAvatar = localStorage.getItem(`ducky_avatar_${user.id}`);
         if (savedAvatar) userAvatar = savedAvatar;
 
-        // Lấy số dư, QUYỀN CTV và CHIẾT KHẤU RIÊNG từ Profiles
-        const { data } = await supabase.from('profiles').select('balance, role, custom_discount').eq('id', user.id).single();
+        // CẬP NHẬT SELECT: Lấy custom_prices (bảng giá JSONB)
+        const { data } = await supabase.from('profiles').select('balance, role, custom_prices').eq('id', user.id).single();
         if (data) {
           userBalance = data.balance || 0;
           setBalance(userBalance);
-          setRole(data.role || "user"); // Cập nhật role CTV nếu có
-          setCustomDiscount(data.custom_discount || 0); // Ghi nhận chiết khấu riêng (VIP)
+          setRole(data.role || "user"); 
+          setCustomPrices(data.custom_prices || {}); 
         }
       }
 
-      // --- THÊM MỚI: XỬ LÝ KHI QUAY LẠI SAU KHI THANH TOÁN QR THÀNH CÔNG ---
+      // XỬ LÝ QUAY LẠI SAU KHI THANH TOÁN QR THÀNH CÔNG
       const urlParams = new URLSearchParams(window.location.search);
       if (urlParams.get('status') === 'success' || urlParams.get('code') === '00' || urlParams.get('cancel') === 'false') {
         const pendingOrder = JSON.parse(localStorage.getItem('ducky_pending_qr_order') || "null");
@@ -115,13 +116,12 @@ export function Home() {
         }
       }
 
-      // 4. LOGIC BẢNG XẾP HẠNG (Đầu tháng ẩn Bot, cuối tháng hiện Bot)
+      // 4. LOGIC BẢNG XẾP HẠNG
       const currentDay = date.getDate();
       const monthIndex = date.getMonth();
 
       let combined = [];
 
-      // Nhét User thật vào trước nếu có nạp tiền
       if (userBalance > 0) {
         combined.push({
           name: userEmail.split('@')[0] + " (Bạn)",
@@ -129,11 +129,10 @@ export function Home() {
           color: "text-rose-600",
           bg: "bg-rose-100",
           letter: userEmail.charAt(0).toUpperCase(),
-          img: userAvatar // Sử dụng avatar thật của user
+          img: userAvatar 
         });
       }
 
-      // CHỈ HIỆN BOT ẢO NẾU LÀ CUỐI THÁNG (Từ ngày 21 trở đi)
       if (currentDay > 20) {
         const botPool = [
           { name: "Hoàng Anh", color: "text-amber-600", bg: "bg-amber-100", img: "https://i.pravatar.cc/150?u=hoanganh" },
@@ -159,7 +158,6 @@ export function Home() {
         combined.push({ ...b3, amount: generatedAmounts[2] });
       }
 
-      // Sắp xếp lại từ cao xuống thấp và lấy top 3
       combined.sort((a, b) => b.amount - a.amount);
       const finalLeaderboard = combined.slice(0, 3).map((u, idx) => ({ ...u, top: idx + 1 }));
       setLeaderboard(finalLeaderboard);
@@ -184,13 +182,13 @@ export function Home() {
     }
   };
 
-  // --- LOGIC TÍNH GIÁ SIÊU CẤP TÍCH HỢP VIP VÀ CTV ---
+  // LOGIC LẤY GIÁ THEO TỪNG GÓI
   const getDisplayOriginalPrice = () => {
     if (!selectedPackage) return 0;
     
-    // Ưu tiên 1: Nếu Admin set Chiết khấu riêng (VIP)
-    if (customDiscount > 0) {
-      return Math.floor(selectedPackage.price * (1 - customDiscount / 100));
+    // Ưu tiên 1: Giá riêng cứng được thiết lập cho gói này
+    if (customPrices && customPrices[selectedPackage.id] > 0) {
+      return customPrices[selectedPackage.id];
     }
     
     // Ưu tiên 2: Nếu là CTV
@@ -198,7 +196,6 @@ export function Home() {
       return selectedPackage.ctvPrice || Math.floor(selectedPackage.price * 0.7);
     }
     
-    // Cuối cùng: Khách thường
     return selectedPackage.price;
   };
 
@@ -218,7 +215,6 @@ export function Home() {
       return; 
     }
 
-    // --- THÊM MỚI: XỬ LÝ CHẶN BUG KHI CHỌN QR ---
     if (paymentMethod === 'qr') {
       setLoadingPay(true);
       try {
@@ -233,7 +229,7 @@ export function Home() {
         if (error) throw error;
         if (data?.checkoutUrl) {
           window.location.href = data.checkoutUrl;
-          return; // QUAN TRỌNG: Dừng code tại đây để không cấp key luôn
+          return; 
         }
       } catch (err) {
         alert("Lỗi tạo link thanh toán QR.");
@@ -348,7 +344,7 @@ export function Home() {
         </div>
       </div>
 
-      {/* --- PHẦN 3: DANH MỤC GAME (GIỮ NGUYÊN) --- */}
+      {/* --- PHẦN 3: DANH MỤC GAME --- */}
       <div className="pt-4">
         <div className="flex items-center justify-between mb-6 px-2">
           <div className="flex items-center gap-3">
@@ -407,13 +403,14 @@ export function Home() {
                     <div className="space-y-3">
                       {packages.map((pkg) => {
                         const isOutOfStock = pkg.stock === 0;
-                        const hasCustomDiscount = customDiscount > 0;
                         const isCTV = role === 'ctv';
                         
-                        // Tính toán giá để hiển thị
+                        const pkgCustomPrice = customPrices?.[pkg.id];
+                        const hasCustomPrice = pkgCustomPrice && pkgCustomPrice > 0;
+                        
                         let displayPrice = pkg.price;
-                        if (hasCustomDiscount) {
-                          displayPrice = Math.floor(pkg.price * (1 - customDiscount / 100));
+                        if (hasCustomPrice) {
+                          displayPrice = pkgCustomPrice;
                         } else if (isCTV) {
                           displayPrice = pkg.ctvPrice || Math.floor(pkg.price * 0.7);
                         }
@@ -425,14 +422,13 @@ export function Home() {
                               <div><span className="font-bold text-gray-900 block text-sm">Key {pkg.name}</span><span className="text-xs text-gray-500">Thời hạn: {pkg.name} {isOutOfStock ? (<span className="text-red-500 font-bold ml-2">(Hết hàng)</span>) : (<span className="text-[#10B981] font-bold ml-2">(Còn {pkg.stock} key)</span>)}</span></div>
                             </div>
                             
-                            {/* HIỂN THỊ GIÁ DÀNH CHO KHÁCH VIP / CTV */}
                             <div>
-                              {(hasCustomDiscount || isCTV) ? (
+                              {(hasCustomPrice || isCTV) ? (
                                 <div className="text-right ml-8 sm:ml-0">
                                   <span className="text-xs text-gray-400 line-through mr-2">{pkg.price.toLocaleString('vi-VN')} đ</span>
                                   <span className="font-bold text-rose-600">{displayPrice.toLocaleString('vi-VN')} đ</span>
                                   <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded ml-2">
-                                    {hasCustomDiscount ? "Giá VIP" : "Giá CTV"}
+                                    {hasCustomPrice ? "Giá VIP" : "Giá CTV"}
                                   </span>
                                 </div>
                               ) : (
