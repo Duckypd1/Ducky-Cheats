@@ -61,9 +61,11 @@ export function Products() {
           const kid = String(k.package_id || k.packageId);
           const pid = String(pkg.id);
           if (kid === pid) return true;
-          if (pkg.name.includes("1 Ngày") && kid === "1d") return true;
-          if (pkg.name.includes("7 Ngày") && kid === "7d") return true;
-          if (pkg.name.includes("30 Ngày") && kid === "30d") return true;
+          
+          const pName = String(pkg.name).toLowerCase();
+          if (kid === "1d" && pName.includes("1 ngày")) return true;
+          if (kid === "7d" && pName.includes("7 ngày")) return true;
+          if (kid === "30d" && pName.includes("30 ngày")) return true;
           return false;
         }).length;
         return { ...pkg, stock };
@@ -71,7 +73,7 @@ export function Products() {
 
       setPackages(packagesWithStock);
       
-      // ĐỒNG BỘ: Tính tổng từ các gói có thật
+      // ĐỒNG BỘ HIỂN THỊ
       const validTotalStock = packagesWithStock.reduce((sum, p) => sum + p.stock, 0);
       setTotalStock(validTotalStock);
 
@@ -99,9 +101,10 @@ export function Products() {
             const kid = String(k.package_id || k.packageId);
             const pid = String(pendingOrder.id);
             if (kid === pid) return true;
-            if (pendingOrder.name.includes("1 Ngày") && kid === "1d") return true;
-            if (pendingOrder.name.includes("7 Ngày") && kid === "7d") return true;
-            if (pendingOrder.name.includes("30 Ngày") && kid === "30d") return true;
+            const pName = String(pendingOrder.name).toLowerCase();
+            if (kid === "1d" && pName.includes("1 ngày")) return true;
+            if (kid === "7d" && pName.includes("7 ngày")) return true;
+            if (kid === "30d" && pName.includes("30 ngày")) return true;
             return false;
           });
             
@@ -164,9 +167,10 @@ export function Products() {
       const kid = String(k.package_id || k.packageId);
       const pid = String(selectedPackage.id);
       if (kid === pid) return true;
-      if (selectedPackage.name.includes("1 Ngày") && kid === "1d") return true;
-      if (selectedPackage.name.includes("7 Ngày") && kid === "7d") return true;
-      if (selectedPackage.name.includes("30 Ngày") && kid === "30d") return true;
+      const pName = String(selectedPackage.name).toLowerCase();
+      if (kid === "1d" && pName.includes("1 ngày")) return true;
+      if (kid === "7d" && pName.includes("7 ngày")) return true;
+      if (kid === "30d" && pName.includes("30 ngày")) return true;
       return false;
     });
 

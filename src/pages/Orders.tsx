@@ -26,7 +26,6 @@ export function Orders() {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    // Tự động load danh sách từ localStorage (đơn hàng mới mua sẽ hiện ở trên cùng)
     const savedOrders = localStorage.getItem('ducky_orders');
     if (savedOrders) {
       setOrders(JSON.parse(savedOrders));

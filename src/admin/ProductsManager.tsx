@@ -10,7 +10,18 @@ export function ProductsManager() {
 
   const fetchPackages = async () => {
     const { data } = await supabase.from('ducky_packages').select('*').order('price', { ascending: true });
-    if (data) setProducts(data);
+    if (data && data.length > 0) {
+      setProducts(data);
+    } else {
+      // TỰ ĐỘNG TẠO GÓI CHUẨN ĐỂ KHÔNG BỊ LỖI ID
+      const defaultPkgs = [
+        { id: "1d", name: "1 Ngày", price: 20000, ctv_price: 15000, popular: false },
+        { id: "7d", name: "7 Ngày", price: 100000, ctv_price: 70000, popular: true },
+        { id: "30d", name: "30 Ngày", price: 300000, ctv_price: 200000, popular: false },
+      ];
+      await supabase.from('ducky_packages').insert(defaultPkgs);
+      setProducts(defaultPkgs.map(p => ({...p, ctvPrice: p.ctv_price})));
+    }
   };
 
   useEffect(() => {
@@ -37,7 +48,7 @@ export function ProductsManager() {
         id: formData.id || Date.now().toString(),
         name: formData.name,
         price: formData.price,
-        ctv_price: Math.floor(formData.price * 0.7), // Tự động tính giá CTV = 70% giá gốc
+        ctv_price: Math.floor(formData.price * 0.7),
         popular: formData.popular || false
       };
       const { error } = await supabase.from('ducky_packages').upsert(payload);
