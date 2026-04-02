@@ -37,7 +37,7 @@ export function Products() {
       const availableKeys = dbKeys || [];
       setTotalStock(availableKeys.length);
 
-      // 2. KÉO GÓI SẢN PHẨM TỪ SUPABASE (Bỏ hoàn toàn LocalStorage)
+      // 2. KÉO GÓI SẢN PHẨM TỪ SUPABASE
       const { data: dbPackages } = await supabase.from('ducky_packages').select('*').order('price', { ascending: true });
       let loadedPackages = [];
       if (dbPackages && dbPackages.length > 0) {
@@ -62,8 +62,10 @@ export function Products() {
       }));
 
       setPackages(packagesWithStock);
+      
+      // FIX LỖI Ở ĐÂY
       const availablePkg = packagesWithStock.find((p: any) => p.stock > 0);
-      setSelectedPackage(availablePkg || null);
+      setSelectedPackage(availablePkg || packagesWithStock[0] || null);
 
       // 3. LẤY SỐ DƯ, QUYỀN VÀ GIÁ VIP TỪ SUPABASE
       const { data: { user } } = await supabase.auth.getUser();
@@ -108,15 +110,9 @@ export function Products() {
     setIsModalOpen(true);
   };
 
-  // LOGIC CHECK VOUCHER TỪ SUPABASE (THAY THẾ LOCALSTORAGE)
   const handleApplyVoucher = async () => {
     if (!voucherCodeInput.trim()) return;
-
-    const { data: foundVoucher, error } = await supabase
-      .from('ducky_vouchers')
-      .select('*')
-      .eq('code', voucherCodeInput.toUpperCase())
-      .maybeSingle();
+    const { data: foundVoucher } = await supabase.from('ducky_vouchers').select('*').eq('code', voucherCodeInput.toUpperCase()).single();
 
     if (foundVoucher && foundVoucher.quantity > 0) {
       setAppliedDiscount(foundVoucher.discount);

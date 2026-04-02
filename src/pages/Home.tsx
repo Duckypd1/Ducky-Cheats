@@ -45,7 +45,7 @@ export function Home() {
     setCurrentMonthStr(`Tháng ${String(date.getMonth() + 1).padStart(2, '0')}`);
 
     const loadData = async () => {
-      // 1. KÉO KHO KEY TRỰC TIẾP TỪ ĐÁM MÂY SUPABASE (FIX BUG LỆCH PHA)
+      // 1. KÉO KHO KEY TRỰC TIẾP TỪ ĐÁM MÂY SUPABASE
       const { data: dbKeys, error: keyErr } = await supabase
         .from('ducky_keys')
         .select('*'); 
@@ -56,7 +56,7 @@ export function Home() {
       const availableKeys = allKeys.filter(k => k.status === 'available');
       setTotalStock(availableKeys.length);
 
-      // 2. KÉO GÓI SẢN PHẨM & GIÁ TỪ SUPABASE (Thay thế hoàn toàn LocalStorage)
+      // 2. KÉO GÓI SẢN PHẨM & GIÁ TỪ SUPABASE
       const { data: dbPackages } = await supabase.from('ducky_packages').select('*').order('price', { ascending: true });
       let loadedPackages = [];
       
@@ -78,14 +78,14 @@ export function Home() {
       
       const packagesWithStock = loadedPackages.map((pkg: any) => ({
         ...pkg,
-        // ÉP KIỂU STRING để tránh lỗi 1 !== "1" của Supabase
         stock: availableKeys.filter((k: any) => String(k.package_id) === String(pkg.id) || String(k.packageId) === String(pkg.id)).length
       }));
 
       setPackages(packagesWithStock);
       
+      // FIX LỖI Ở ĐÂY: Nếu không có gói nào còn hàng, lấy đại gói đầu tiên để Modal vẫn hiện
       const availablePkg = packagesWithStock.find((p: any) => p.stock > 0);
-      setSelectedPackage(availablePkg || null);
+      setSelectedPackage(availablePkg || packagesWithStock[0] || null);
 
       // 3. LẤY DATA THẬT CỦA USER TỪ ĐÁM MÂY
       let userBalance = 0;
@@ -114,8 +114,6 @@ export function Home() {
       if (urlParams.get('status') === 'success' || urlParams.get('code') === '00' || urlParams.get('cancel') === 'false') {
         const pendingOrder = JSON.parse(localStorage.getItem('ducky_pending_qr_order') || "null");
         if (pendingOrder) {
-          
-          // Fix logic rút 1 key an toàn
           const { data: freshKeys } = await supabase.from('ducky_keys').select('*').eq('status', 'available');
           const keysToAssign = (freshKeys || []).filter(k => String(k.package_id) === String(pendingOrder.id));
             
@@ -184,7 +182,6 @@ export function Home() {
     loadData();
   }, []);
 
-  // --- LOGIC CHECK VOUCHER TỪ SUPABASE (THAY THẾ LOCALSTORAGE) ---
   const handleApplyVoucher = async () => {
     if (!voucherCodeInput.trim()) return;
 
@@ -218,7 +215,6 @@ export function Home() {
   const discountAmount = (originalPrice * appliedDiscount) / 100;
   const finalPrice = originalPrice - discountAmount;
 
-  // --- XỬ LÝ THANH TOÁN (LẤY KEY TỪ SUPABASE) ---
   const handleCheckout = async () => {
     if (!selectedPackage) return;
 
