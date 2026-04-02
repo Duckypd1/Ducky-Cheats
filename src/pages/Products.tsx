@@ -14,11 +14,13 @@ const productList = [
   }
 ];
 
+const DUMMY_PACKAGE = { id: "loading", name: "Đang tải dữ liệu...", price: 0, ctvPrice: 0, stock: 0, popular: false };
+
 export function Products() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [activeProduct, setActiveProduct] = useState(productList[0]); 
-  const [packages, setPackages] = useState<any[]>([]);
-  const [selectedPackage, setSelectedPackage] = useState<any>(null);
+  const [packages, setPackages] = useState<any[]>([DUMMY_PACKAGE]);
+  const [selectedPackage, setSelectedPackage] = useState<any>(DUMMY_PACKAGE);
   const [paymentMethod, setPaymentMethod] = useState("wallet");
   const [balance, setBalance] = useState<number>(0);
   const [userId, setUserId] = useState<string | null>(null);
@@ -32,12 +34,9 @@ export function Products() {
 
   useEffect(() => {
     const loadData = async () => {
-      // 1. KÉO KHO KEY TRỰC TIẾP TỪ ĐÁM MÂY SUPABASE
       const { data: dbKeys } = await supabase.from('ducky_keys').select('*').eq('status', 'available');
       const availableKeys = dbKeys || [];
-      setTotalStock(availableKeys.length);
 
-      // 2. KÉO GÓI SẢN PHẨM TỪ SUPABASE
       const { data: dbPackages } = await supabase.from('ducky_packages').select('*').order('price', { ascending: true });
       let loadedPackages = [];
       if (dbPackages && dbPackages.length > 0) {
@@ -56,18 +55,29 @@ export function Products() {
         ];
       }
       
-      const packagesWithStock = loadedPackages.map((pkg: any) => ({
-        ...pkg,
-        stock: availableKeys.filter((k: any) => String(k.package_id) === String(pkg.id)).length
-      }));
+      // BỘ LỌC THÔNG MINH
+      const packagesWithStock = loadedPackages.map((pkg: any) => {
+        const stock = availableKeys.filter((k: any) => {
+          const kid = String(k.package_id || k.packageId);
+          const pid = String(pkg.id);
+          if (kid === pid) return true;
+          if (pkg.name.includes("1 Ngày") && kid === "1d") return true;
+          if (pkg.name.includes("7 Ngày") && kid === "7d") return true;
+          if (pkg.name.includes("30 Ngày") && kid === "30d") return true;
+          return false;
+        }).length;
+        return { ...pkg, stock };
+      });
 
       setPackages(packagesWithStock);
       
-      // FIX LỖI Ở ĐÂY
-      const availablePkg = packagesWithStock.find((p: any) => p.stock > 0);
-      setSelectedPackage(availablePkg || packagesWithStock[0] || null);
+      // Đồng bộ số Key hiển thị bên ngoài
+      const validTotalStock = packagesWithStock.reduce((sum, p) => sum + p.stock, 0);
+      setTotalStock(validTotalStock);
 
-      // 3. LẤY SỐ DƯ, QUYỀN VÀ GIÁ VIP TỪ SUPABASE
+      const availablePkg = packagesWithStock.find((p: any) => p.stock > 0);
+      setSelectedPackage(availablePkg || packagesWithStock[0] || DUMMY_PACKAGE);
+
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         setUserId(user.id);
@@ -79,13 +89,21 @@ export function Products() {
         }
       }
 
-      // XỬ LÝ QUAY LẠI SAU KHI THANH TOÁN QR THÀNH CÔNG
       const urlParams = new URLSearchParams(window.location.search);
       if (urlParams.get('status') === 'success' || urlParams.get('code') === '00' || urlParams.get('cancel') === 'false') {
         const pendingOrder = JSON.parse(localStorage.getItem('ducky_pending_qr_order') || "null");
         if (pendingOrder) {
           const { data: freshKeys } = await supabase.from('ducky_keys').select('*').eq('status', 'available');
-          const keysToAssign = (freshKeys || []).filter(k => String(k.package_id) === String(pendingOrder.id));
+          
+          const keysToAssign = (freshKeys || []).filter(k => {
+            const kid = String(k.package_id || k.packageId);
+            const pid = String(pendingOrder.id);
+            if (kid === pid) return true;
+            if (pendingOrder.name.includes("1 Ngày") && kid === "1d") return true;
+            if (pendingOrder.name.includes("7 Ngày") && kid === "7d") return true;
+            if (pendingOrder.name.includes("30 Ngày") && kid === "30d") return true;
+            return false;
+          });
             
           if (keysToAssign && keysToAssign.length > 0) {
             const assignedKey = keysToAssign[0];
@@ -112,7 +130,7 @@ export function Products() {
 
   const handleApplyVoucher = async () => {
     if (!voucherCodeInput.trim()) return;
-    const { data: foundVoucher } = await supabase.from('ducky_vouchers').select('*').eq('code', voucherCodeInput.toUpperCase()).single();
+    const { data: foundVoucher } = await supabase.from('ducky_vouchers').select('*').eq('code', voucherCodeInput.toUpperCase()).maybeSingle();
 
     if (foundVoucher && foundVoucher.quantity > 0) {
       setAppliedDiscount(foundVoucher.discount);
@@ -124,7 +142,7 @@ export function Products() {
   };
 
   const getDisplayOriginalPrice = () => {
-    if (!selectedPackage) return 0;
+    if (!selectedPackage || selectedPackage.id === 'loading') return 0;
     if (customPrices && customPrices[selectedPackage.id] > 0) {
       return customPrices[selectedPackage.id];
     }
@@ -139,9 +157,18 @@ export function Products() {
   const finalPrice = originalPrice - discountAmount;
 
   const handleCheckout = async () => {
-    if (!selectedPackage) return;
+    if (!selectedPackage || selectedPackage.id === 'loading') return;
     const { data: allAvailableKeys } = await supabase.from('ducky_keys').select('*').eq('status', 'available');
-    const keysToAssign = (allAvailableKeys || []).filter(k => String(k.package_id) === String(selectedPackage.id));
+    
+    const keysToAssign = (allAvailableKeys || []).filter(k => {
+      const kid = String(k.package_id || k.packageId);
+      const pid = String(selectedPackage.id);
+      if (kid === pid) return true;
+      if (selectedPackage.name.includes("1 Ngày") && kid === "1d") return true;
+      if (selectedPackage.name.includes("7 Ngày") && kid === "7d") return true;
+      if (selectedPackage.name.includes("30 Ngày") && kid === "30d") return true;
+      return false;
+    });
 
     if (!keysToAssign || keysToAssign.length === 0) {
       alert("Rất tiếc, gói này vừa hết key! Vui lòng chọn gói khác.");
@@ -354,10 +381,10 @@ export function Products() {
                     
                     <button 
                       onClick={handleCheckout}
-                      disabled={loadingPay || !selectedPackage || selectedPackage.stock === 0}
+                      disabled={loadingPay || !selectedPackage || selectedPackage.id === 'loading' || selectedPackage.stock === 0}
                       className="w-full bg-white border-2 border-[#8B5CF6] hover:bg-[#8B5CF6] hover:text-white disabled:bg-gray-100 disabled:border-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed text-[#8B5CF6] py-3.5 rounded-xl font-bold transition-all shadow-sm flex items-center justify-center gap-2 group"
                     >
-                      {loadingPay ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className={`w-4 h-4 transition-colors ${!selectedPackage || selectedPackage.stock === 0 ? 'text-gray-400' : 'group-hover:text-white'}`}/>} 
+                      {loadingPay ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className={`w-4 h-4 transition-colors ${!selectedPackage || selectedPackage.id === 'loading' || selectedPackage.stock === 0 ? 'text-gray-400' : 'group-hover:text-white'}`}/>} 
                       {loadingPay ? "Đang xử lý..." : "Thanh toán ngay"}
                     </button>
                     <p className="text-[11px] text-gray-400 text-center mt-5 leading-relaxed font-medium">
