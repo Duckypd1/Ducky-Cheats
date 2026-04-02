@@ -1,79 +1,67 @@
 import React, { useState, useEffect } from 'react';
 import { Key, Database, Save, CheckCircle2, Trash2, Loader2 } from 'lucide-react';
-import { supabase } from '../lib/supabase'; // THÊM MỚI: Import thư viện Supabase
+import { supabase } from '../lib/supabase'; 
 
 export function KeyManager() {
   const [keysInput, setKeysInput] = useState("");
   const [packages, setPackages] = useState<any[]>([]);
   const [selectedPackageId, setSelectedPackageId] = useState<string>("");
   const [keysList, setKeysList] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false); // THÊM MỚI: Trạng thái tải dữ liệu
+  const [loading, setLoading] = useState(false); 
 
-  // Hàm kéo danh sách Key từ Supabase
-  const fetchKeys = async () => {
+  const fetchData = async () => {
     try {
-      const { data, error } = await supabase
-        .from('ducky_keys')
-        .select('*')
-        .order('created_at', { ascending: false }); // Xếp key mới lên đầu
-        
+      // 1. KÉO GÓI SẢN PHẨM TỪ SUPABASE (Đồng bộ chuẩn ID với trang chủ)
+      const { data: dbPkgs } = await supabase.from('ducky_packages').select('*').order('price', { ascending: true });
+      if (dbPkgs && dbPkgs.length > 0) {
+        setPackages(dbPkgs);
+        setSelectedPackageId(dbPkgs[0].id);
+      } else {
+        const defaultPkgs = [
+          { id: "1d", name: "1 Ngày", price: 20000, ctvPrice: 15000 },
+          { id: "7d", name: "7 Ngày", price: 100000, ctvPrice: 70000 },
+          { id: "30d", name: "30 Ngày", price: 300000, ctvPrice: 200000 },
+        ];
+        setPackages(defaultPkgs);
+        setSelectedPackageId(defaultPkgs[0].id);
+      }
+
+      // 2. KÉO DANH SÁCH KEY
+      const { data: dbKeys, error } = await supabase.from('ducky_keys').select('*').order('created_at', { ascending: false });
       if (error) throw error;
-      if (data) setKeysList(data);
+      if (dbKeys) setKeysList(dbKeys);
     } catch (err: any) {
-      console.error("Lỗi tải key:", err.message);
+      console.error("Lỗi tải dữ liệu:", err.message);
     }
   };
 
-  // Đọc danh sách Gói và Key từ bộ nhớ khi mở trang
   useEffect(() => {
-    // 1. Tải danh sách Gói sản phẩm (Fallback giống hệt trang Home)
-    const savedPkgs = localStorage.getItem('ducky_packages');
-    let loadedPackages = [];
-    if (savedPkgs) {
-      loadedPackages = JSON.parse(savedPkgs);
-    } else {
-      loadedPackages = [
-        { id: "1d", name: "1 Ngày", price: 20000, ctvPrice: 15000 },
-        { id: "7d", name: "7 Ngày", price: 100000, ctvPrice: 70000 },
-        { id: "30d", name: "30 Ngày", price: 300000, ctvPrice: 200000 },
-      ];
-    }
-    setPackages(loadedPackages);
-    if (loadedPackages.length > 0) setSelectedPackageId(loadedPackages[0].id);
-
-    // 2. Tải danh sách Key thẳng từ Đám Mây Supabase
-    fetchKeys();
+    fetchData();
   }, []);
 
-  // Xử lý nạp key vào kho (Bắn lên Supabase)
   const handleSaveKeys = async () => {
     if (!selectedPackageId) {
       alert("Vui lòng chọn gói sản phẩm!");
       return;
     }
 
-    // Tách các key theo dấu xuống dòng, loại bỏ dòng trống
     const keyArray = keysInput.split('\n').filter(k => k.trim() !== '');
     if (keyArray.length === 0) return;
-
     setLoading(true);
 
     try {
-      // Tạo các object key mới theo chuẩn Database (dùng package_id)
       const newKeys = keyArray.map(code => ({
         package_id: selectedPackageId, 
         key_code: code.trim(),
         status: 'available' 
       }));
 
-      // Bắn toàn bộ mảng Key lên bảng ducky_keys trên Supabase
       const { error } = await supabase.from('ducky_keys').insert(newKeys);
-      
       if (error) throw error;
 
       alert(`Thành công! Đã nạp ${newKeys.length} key vào Đám mây.`);
-      setKeysInput(""); // Làm trống ô nhập
-      fetchKeys(); // Tải lại danh sách key mới nhất từ mạng
+      setKeysInput(""); 
+      fetchData(); 
     } catch (err: any) {
       alert("❌ Lỗi khi lưu key lên hệ thống: " + err.message);
     } finally {
@@ -81,15 +69,12 @@ export function KeyManager() {
     }
   };
 
-  // Xử lý xóa key (Xóa trực tiếp trên Supabase)
   const handleDeleteKey = async (id: string) => {
     if (window.confirm("Bạn có chắc chắn muốn xóa key này khỏi hệ thống?")) {
       setLoading(true);
       try {
         const { error } = await supabase.from('ducky_keys').delete().eq('id', id);
         if (error) throw error;
-        
-        // Cập nhật lại danh sách hiển thị
         setKeysList(prev => prev.filter(k => k.id !== id));
       } catch (err: any) {
         alert("❌ Lỗi khi xóa key: " + err.message);
@@ -99,9 +84,8 @@ export function KeyManager() {
     }
   };
 
-  // Hàm hỗ trợ: Lấy tên gói dựa trên ID
   const getPackageName = (id: string) => {
-    const pkg = packages.find(p => p.id === id);
+    const pkg = packages.find(p => String(p.id) === String(id));
     return pkg ? pkg.name : "Gói không rõ";
   };
 
@@ -112,7 +96,6 @@ export function KeyManager() {
         Quản lý Kho Key Đám Mây
       </h2>
 
-      {/* --- KHU VỰC 1: NHẬP KEY MỚI --- */}
       <div className="bg-white p-6 md:p-8 rounded-3xl border border-gray-100 shadow-sm">
         <h3 className="text-lg font-bold text-gray-900 mb-6">Nhập lô Key mới</h3>
         
@@ -153,7 +136,6 @@ export function KeyManager() {
         </button>
       </div>
 
-      {/* --- KHU VỰC 2: QUẢN LÝ DANH SÁCH KEY --- */}
       <div className="bg-white p-6 md:p-8 rounded-3xl border border-gray-100 shadow-sm">
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
@@ -161,7 +143,7 @@ export function KeyManager() {
             Danh sách Key hiện có ({keysList.length})
           </h3>
           <button 
-            onClick={fetchKeys} 
+            onClick={fetchData} 
             className="text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition-colors"
           >
             Làm mới
@@ -185,7 +167,7 @@ export function KeyManager() {
                     {k.key_code}
                   </td>
                   <td className="p-4 font-semibold text-gray-900 text-sm">
-                    Key {getPackageName(k.package_id || k.packageId)} {/* Hỗ trợ cả chuẩn ID cũ và mới */}
+                    Key {getPackageName(k.package_id || k.packageId)} 
                   </td>
                   <td className="p-4 text-center">
                     {k.status === 'available' ? (

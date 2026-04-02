@@ -71,7 +71,7 @@ export function Products() {
 
       setPackages(packagesWithStock);
       
-      // Đồng bộ số Key hiển thị bên ngoài
+      // ĐỒNG BỘ: Tính tổng từ các gói có thật
       const validTotalStock = packagesWithStock.reduce((sum, p) => sum + p.stock, 0);
       setTotalStock(validTotalStock);
 

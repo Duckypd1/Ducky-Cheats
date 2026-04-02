@@ -27,19 +27,13 @@ export function Home() {
   const [balance, setBalance] = useState<number>(0);
   const [userId, setUserId] = useState<string | null>(null);
   const [role, setRole] = useState<string>("user"); 
-  
   const [customPrices, setCustomPrices] = useState<Record<string, number>>({}); 
-  
   const [totalStock, setTotalStock] = useState<number>(0);
-  
   const [voucherCodeInput, setVoucherCodeInput] = useState("");
   const [appliedDiscount, setAppliedDiscount] = useState<number>(0); 
-  
   const [currentMonthStr, setCurrentMonthStr] = useState("");
   const [leaderboard, setLeaderboard] = useState<any[]>([]);
-
   const [loadingPay, setLoadingPay] = useState(false);
-
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -47,11 +41,9 @@ export function Home() {
     setCurrentMonthStr(`Tháng ${String(date.getMonth() + 1).padStart(2, '0')}`);
 
     const loadData = async () => {
-      const { data: dbKeys, error: keyErr } = await supabase.from('ducky_keys').select('*'); 
+      const { data: dbKeys, error: keyErr } = await supabase.from('ducky_keys').select('*').eq('status', 'available'); 
       if (keyErr) console.error("Lỗi tải Key:", keyErr);
-        
-      const allKeys = dbKeys || [];
-      const availableKeys = allKeys.filter(k => k.status === 'available');
+      const availableKeys = dbKeys || [];
 
       const { data: dbPackages } = await supabase.from('ducky_packages').select('*').order('price', { ascending: true });
       let loadedPackages = [];
@@ -72,7 +64,7 @@ export function Home() {
         ];
       }
       
-      // BỘ LỌC THÔNG MINH: Nối Key cũ với Gói mới
+      // BỘ LỌC THÔNG MINH
       const packagesWithStock = loadedPackages.map((pkg: any) => {
         const stock = availableKeys.filter((k: any) => {
           const kid = String(k.package_id || k.packageId);
@@ -88,7 +80,7 @@ export function Home() {
 
       setPackages(packagesWithStock);
       
-      // Đồng bộ số Key hiển thị bên ngoài khớp 100% bên trong
+      // ĐỒNG BỘ: Tính tổng từ các gói có thật để khớp bên ngoài với bên trong
       const validTotalStock = packagesWithStock.reduce((sum: number, p: any) => sum + p.stock, 0);
       setTotalStock(validTotalStock);
 
@@ -224,7 +216,6 @@ export function Home() {
 
     const { data: allAvailableKeys } = await supabase.from('ducky_keys').select('*').eq('status', 'available');
     
-    // Tương tự, dùng bộ lọc thông minh lúc rút Key
     const keysToAssign = (allAvailableKeys || []).filter(k => {
       const kid = String(k.package_id || k.packageId);
       const pid = String(selectedPackage.id);
@@ -243,14 +234,8 @@ export function Home() {
     if (paymentMethod === 'qr') {
       setLoadingPay(true);
       try {
-        localStorage.setItem('ducky_pending_qr_order', JSON.stringify({
-          id: selectedPackage.id,
-          name: selectedPackage.name,
-          price: finalPrice
-        }));
-        const { data, error } = await supabase.functions.invoke('create-payos-order', {
-          body: { amount: finalPrice }
-        });
+        localStorage.setItem('ducky_pending_qr_order', JSON.stringify({ id: selectedPackage.id, name: selectedPackage.name, price: finalPrice }));
+        const { data, error } = await supabase.functions.invoke('create-payos-order', { body: { amount: finalPrice } });
         if (error) throw error;
         if (data?.checkoutUrl) {
           window.location.href = data.checkoutUrl;
@@ -283,27 +268,11 @@ export function Home() {
     const now = new Date();
     const dateStr = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
-    const newOrder = {
-      id: orderId,
-      product: `Ducky Cheat AOV VIP (${selectedPackage.name})`,
-      amount: finalPrice.toLocaleString('vi-VN') + "đ",
-      status: "completed",
-      date: dateStr,
-      key: assignedKey.key_code 
-    };
-
+    const newOrder = { id: orderId, product: `Ducky Cheat AOV VIP (${selectedPackage.name})`, amount: finalPrice.toLocaleString('vi-VN') + "đ", status: "completed", date: dateStr, key: assignedKey.key_code };
     let savedOrders = JSON.parse(localStorage.getItem('ducky_orders') || "[]");
     localStorage.setItem('ducky_orders', JSON.stringify([newOrder, ...savedOrders]));
 
-    const newTxn = {
-      id: "TXN-" + Math.floor(100000 + Math.random() * 900000),
-      type: "purchase",
-      amount: "-" + finalPrice.toLocaleString('vi-VN') + "đ",
-      date: dateStr,
-      status: "success",
-      description: `Mua Ducky Cheat AOV VIP (${selectedPackage.name})`
-    };
-
+    const newTxn = { id: "TXN-" + Math.floor(100000 + Math.random() * 900000), type: "purchase", amount: "-" + finalPrice.toLocaleString('vi-VN') + "đ", date: dateStr, status: "success", description: `Mua Ducky Cheat AOV VIP (${selectedPackage.name})` };
     let savedTxns = JSON.parse(localStorage.getItem('ducky_transactions') || "[]");
     localStorage.setItem('ducky_transactions', JSON.stringify([newTxn, ...savedTxns]));
 
@@ -406,15 +375,22 @@ export function Home() {
               <h3 className="text-lg md:text-xl font-bold text-gray-900">Thanh toán đơn hàng</h3>
               <button onClick={() => setIsModalOpen(false)} className="w-8 h-8 rounded-full bg-gray-50 flex items-center justify-center hover:bg-gray-100 text-gray-500 transition-colors"><X className="w-5 h-5" /></button>
             </div>
-            
             <div className="p-4 md:p-6 overflow-y-auto flex-1">
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                 <div className="lg:col-span-7 xl:col-span-8 space-y-6">
+                  
                   <div className="bg-white rounded-2xl p-5 md:p-6 shadow-sm border border-gray-100">
                     <h4 className="font-bold text-gray-900 mb-5 flex items-center gap-2"><ShoppingBag className="w-5 h-5 text-gray-700"/> Thông tin sản phẩm</h4>
                     <div className="flex flex-col sm:flex-row sm:items-center gap-5">
                       <img src={activeProduct.imageUrl} alt={activeProduct.name} className="w-24 h-24 rounded-2xl object-cover bg-gray-900 shadow-sm" />
-                      <div><h5 className="font-bold text-lg text-gray-900 mb-1">{activeProduct.name}</h5><p className="text-sm text-indigo-600 font-semibold mb-3">AOV</p><div className="flex flex-wrap gap-2"><span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg flex items-center gap-1.5"><ShieldCheck className="w-4 h-4"/> Bản quyền trọn đời</span><span className="text-xs font-bold text-green-600 bg-green-50 px-3 py-1.5 rounded-lg flex items-center gap-1.5"><Download className="w-4 h-4"/> Tải xuống vĩnh viễn</span></div></div>
+                      <div>
+                        <h5 className="font-bold text-lg text-gray-900 mb-1">{activeProduct.name}</h5>
+                        <p className="text-sm text-indigo-600 font-semibold mb-3">AOV</p>
+                        <div className="flex flex-wrap gap-2">
+                          <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg flex items-center gap-1.5"><ShieldCheck className="w-4 h-4"/> Bản quyền trọn đời</span>
+                          <span className="text-xs font-bold text-green-600 bg-green-50 px-3 py-1.5 rounded-lg flex items-center gap-1.5"><Download className="w-4 h-4"/> Tải xuống vĩnh viễn</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
@@ -435,63 +411,102 @@ export function Home() {
                         }
 
                         return (
-                          <label key={pkg.id} onClick={() => !isOutOfStock && setSelectedPackage(pkg)} className={`flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl border-2 transition-all ${isOutOfStock ? "opacity-60 cursor-not-allowed bg-gray-50 border-gray-100" : selectedPackage.id === pkg.id ? "border-[#4F46E5] bg-indigo-50/20 cursor-pointer" : "border-gray-100 hover:border-indigo-100 bg-white cursor-pointer"}`}>
-                            <div className="flex items-center gap-3 mb-2 sm:mb-0">
-                              <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${selectedPackage.id === pkg.id && !isOutOfStock ? "border-[#4F46E5]" : "border-gray-300"}`}>{selectedPackage.id === pkg.id && !isOutOfStock && <div className="w-2.5 h-2.5 rounded-full bg-[#4F46E5]"></div>}</div>
-                              <div><span className="font-bold text-gray-900 block text-sm">Key {pkg.name}</span><span className="text-xs text-gray-500">Thời hạn: {pkg.name} {isOutOfStock ? (<span className="text-red-500 font-bold ml-2">(Hết hàng)</span>) : (<span className="text-[#10B981] font-bold ml-2">(Còn {pkg.stock} key)</span>)}</span></div>
+                        <label 
+                          key={pkg.id}
+                          onClick={() => {
+                            if (isOutOfStock) return;
+                            setSelectedPackage(pkg);
+                            setAppliedDiscount(0);
+                          }}
+                          className={`flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl border-2 transition-all ${isOutOfStock ? "opacity-60 cursor-not-allowed bg-gray-50 border-gray-100" : selectedPackage.id === pkg.id ? "border-[#4F46E5] bg-indigo-50/20 cursor-pointer" : "border-gray-100 hover:border-indigo-100 bg-white cursor-pointer"}`}
+                        >
+                          <div className="flex items-center gap-3 mb-2 sm:mb-0">
+                            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${selectedPackage.id === pkg.id && !isOutOfStock ? "border-[#4F46E5]" : "border-gray-300"}`}>
+                              {selectedPackage.id === pkg.id && !isOutOfStock && <div className="w-2.5 h-2.5 rounded-full bg-[#4F46E5]"></div>}
                             </div>
-                            
                             <div>
-                              {(hasCustomPrice || isCTV) ? (
-                                <div className="text-right ml-8 sm:ml-0">
-                                  <span className="text-xs text-gray-400 line-through mr-2">{pkg.price.toLocaleString('vi-VN')} đ</span>
-                                  <span className="font-bold text-rose-600">{displayPrice.toLocaleString('vi-VN')} đ</span>
-                                  <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded ml-2">
-                                    {hasCustomPrice ? "Giá VIP" : "Giá CTV"}
-                                  </span>
-                                </div>
-                              ) : (
-                                <span className="font-bold text-gray-900 ml-8 sm:ml-0">{pkg.price.toLocaleString('vi-VN')} đ</span>
-                              )}
+                              <span className="font-bold text-gray-900 block text-sm">Key {pkg.name}</span>
+                              <span className="text-xs text-gray-500">
+                                Thời hạn: {pkg.name} 
+                                {isOutOfStock ? <span className="text-red-500 font-bold ml-2">(Hết hàng)</span> : <span className="text-[#10B981] font-bold ml-2">(Còn {pkg.stock} key)</span>}
+                              </span>
                             </div>
-                          </label>
-                        )
-                      })}
+                          </div>
+                          <div>
+                            {(hasCustomPrice || isCTV) ? (
+                              <div className="text-right ml-8 sm:ml-0">
+                                <span className="text-xs text-gray-400 line-through mr-2">{pkg.price.toLocaleString('vi-VN')} đ</span>
+                                <span className="font-bold text-rose-600">{displayPrice.toLocaleString('vi-VN')} đ</span>
+                                <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded ml-2">{hasCustomPrice ? "Giá VIP" : "Giá CTV"}</span>
+                              </div>
+                            ) : (
+                              <span className="font-bold text-gray-900 ml-8 sm:ml-0">{pkg.price.toLocaleString('vi-VN')} đ</span>
+                            )}
+                          </div>
+                        </label>
+                      )})}
                     </div>
                   </div>
 
                   <div className="bg-white rounded-2xl p-5 md:p-6 shadow-sm border border-gray-100">
                     <h4 className="font-bold text-gray-900 mb-5 flex items-center gap-2"><CreditCard className="w-5 h-5 text-gray-700"/> Thông tin thanh toán</h4>
-                    <div><label className="block text-sm font-bold text-gray-700 mb-3">Phương thức thanh toán</label><select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} className="w-full bg-white border-2 border-gray-100 text-gray-900 text-sm rounded-xl focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 block p-4 outline-none font-semibold transition-all"><option value="wallet">Ví hệ thống (Số dư: {balance.toLocaleString('vi-VN')} đ)</option><option value="qr">SePay (Chuyển khoản QR)</option></select></div>
+                    <div>
+                      <label className="block text-sm font-bold text-gray-700 mb-3">Phương thức thanh toán</label>
+                      <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} className="w-full bg-white border-2 border-gray-100 text-gray-900 text-sm rounded-xl focus:ring-2 focus:ring-indigo-100 focus:border-indigo-500 block p-4 outline-none font-semibold transition-all">
+                        <option value="wallet">Ví hệ thống (Số dư: {balance.toLocaleString('vi-VN')} đ)</option>
+                        <option value="qr">SePay (Chuyển khoản QR)</option>
+                      </select>
+                    </div>
                   </div>
                 </div>
 
                 <div className="lg:col-span-5 xl:col-span-4 space-y-6">
                   <div className="bg-white rounded-2xl p-5 md:p-6 shadow-sm border border-gray-100">
                     <h4 className="font-bold text-gray-900 mb-5 flex items-center gap-2"><Tag className="w-5 h-5 text-gray-700"/> Mã giảm giá</h4>
-                    <div className="flex flex-row items-stretch gap-2 w-full"><input type="text" value={voucherCodeInput} onChange={(e) => setVoucherCodeInput(e.target.value)} placeholder="Nhập mã..." className="flex-1 min-w-0 bg-gray-50 border border-gray-100 text-gray-900 text-sm rounded-xl px-3 outline-none focus:ring-2 focus:ring-indigo-100 uppercase font-bold" /><button onClick={handleApplyVoucher} className="shrink-0 bg-white border border-gray-200 text-gray-700 hover:text-indigo-600 hover:border-indigo-300 px-4 py-2.5 rounded-xl text-sm font-bold transition-all shadow-sm">Áp dụng</button></div>
-                    {appliedDiscount > 0 && (<p className="text-[11px] text-green-600 font-bold mt-2 flex items-center gap-1"><Check className="w-3 h-3"/> Đã giảm {appliedDiscount}%</p>)}
+                    <div className="flex flex-row items-stretch gap-2 w-full">
+                      <input type="text" value={voucherCodeInput} onChange={(e) => setVoucherCodeInput(e.target.value)} placeholder="Nhập mã giảm giá" className="flex-1 min-w-0 bg-gray-50 border border-gray-100 text-gray-900 text-sm rounded-xl p-3 outline-none focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 font-medium uppercase min-w-0" />
+                      <button onClick={handleApplyVoucher} className="bg-white border border-gray-200 text-gray-700 hover:text-indigo-600 hover:border-indigo-300 px-4 py-3 rounded-xl text-sm font-bold transition-all shadow-sm whitespace-nowrap flex-shrink-0">
+                        Áp dụng
+                      </button>
+                    </div>
+                    {appliedDiscount > 0 && <p className="text-xs text-green-600 font-bold mt-2">Đã áp dụng giảm {appliedDiscount}%</p>}
                   </div>
 
                   <div className="bg-white rounded-2xl p-5 md:p-6 shadow-sm border border-gray-100">
                     <h4 className="font-bold text-gray-900 mb-5 flex items-center gap-2"><Receipt className="w-5 h-5 text-gray-700"/> Tóm tắt đơn hàng</h4>
-                    <div className="space-y-4 mb-6 border-b border-gray-100 pb-6"><div className="flex justify-between items-center text-sm"><span className="text-gray-500 font-medium">Giá gốc</span><span className="font-bold text-gray-900">{originalPrice.toLocaleString('vi-VN')} đ</span></div>{appliedDiscount > 0 && (<div className="flex justify-between items-center text-sm"><span className="text-green-600 font-bold">Giảm giá ({appliedDiscount}%)</span><span className="font-bold text-green-600">-{discountAmount.toLocaleString('vi-VN')} đ</span></div>)}</div>
-                    <div className="flex justify-between items-center mb-6"><span className="text-base font-bold text-gray-900">Tổng cộng</span><span className="text-2xl font-bold text-indigo-600">{finalPrice.toLocaleString('vi-VN')} đ</span></div>
+                    <div className="space-y-4 mb-6 border-b border-gray-100 pb-6">
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-gray-500 font-medium">Giá gốc</span>
+                        <span className="font-bold text-gray-900">{originalPrice.toLocaleString('vi-VN')} đ</span>
+                      </div>
+                      {appliedDiscount > 0 && (
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-green-600 font-bold">Giảm giá ({appliedDiscount}%)</span>
+                          <span className="font-bold text-green-600">-{discountAmount.toLocaleString('vi-VN')} đ</span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex justify-between items-center mb-6">
+                      <span className="text-base font-bold text-gray-900">Tổng cộng</span>
+                      <span className="text-2xl font-bold text-indigo-600">{finalPrice.toLocaleString('vi-VN')} đ</span>
+                    </div>
                     
                     <button 
-                      onClick={handleCheckout} 
-                      disabled={loadingPay || !selectedPackage || selectedPackage.id === 'loading' || selectedPackage.stock === 0} 
+                      onClick={handleCheckout}
+                      disabled={loadingPay || !selectedPackage || selectedPackage.id === 'loading' || selectedPackage.stock === 0}
                       className="w-full bg-white border-2 border-[#8B5CF6] hover:bg-[#8B5CF6] hover:text-white disabled:bg-gray-100 disabled:border-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed text-[#8B5CF6] py-3.5 rounded-xl font-bold transition-all shadow-sm flex items-center justify-center gap-2 group"
                     >
-                      {loadingPay ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className={`w-4 h-4 transition-colors ${!selectedPackage || selectedPackage.id === 'loading' || selectedPackage.stock === 0 ? 'text-gray-400' : 'group-hover:text-white'}`}/>}
+                      {loadingPay ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className={`w-4 h-4 transition-colors ${!selectedPackage || selectedPackage.id === 'loading' || selectedPackage.stock === 0 ? 'text-gray-400' : 'group-hover:text-white'}`}/>} 
                       {loadingPay ? "Đang xử lý..." : "Thanh toán ngay"}
                     </button>
-                    
-                    <p className="text-[11px] text-gray-400 text-center mt-5 leading-relaxed font-medium">Bằng việc đặt hàng, bạn đồng ý với <a href="#" className="underline hover:text-gray-600">Điều khoản</a> & <a href="#" className="underline hover:text-gray-600">Chính sách</a></p>
+                    <p className="text-[11px] text-gray-400 text-center mt-5 leading-relaxed font-medium">
+                      Bằng việc đặt hàng, bạn đồng ý với <a href="#" className="underline hover:text-gray-600">Điều khoản</a> & <a href="#" className="underline hover:text-gray-600">Chính sách</a>
+                    </p>
                   </div>
                 </div>
               </div>
             </div>
+
           </div>
         </div>
       )}
