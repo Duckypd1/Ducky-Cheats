@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Check, ShoppingBag, ShieldCheck, Download, FileText, CreditCard, Tag, Receipt, Lock } from 'lucide-react'; 
+import { X, Check, ShoppingBag, ShieldCheck, Download, FileText, CreditCard, Tag, Receipt, Lock, Loader2 } from 'lucide-react'; 
 import { supabase } from "../lib/supabase";
 import { useNavigate } from "react-router-dom";
 
@@ -23,7 +23,13 @@ export function Products() {
   const [paymentMethod, setPaymentMethod] = useState("wallet");
   const [balance, setBalance] = useState<number>(0);
   const [userId, setUserId] = useState<string | null>(null);
+  
+  // THÊM MỚI: State cho Quyền và Giá VIP
+  const [role, setRole] = useState<string>("user"); 
+  const [customPrices, setCustomPrices] = useState<Record<string, number>>({}); 
+
   const [totalStock, setTotalStock] = useState<number>(0);
+  const [loadingPay, setLoadingPay] = useState(false); // State loading thanh toán
 
   const [voucherCodeInput, setVoucherCodeInput] = useState("");
   const [appliedDiscount, setAppliedDiscount] = useState<number>(0);
@@ -31,41 +37,72 @@ export function Products() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // 1. KHỞI TẠO KHO KEY (TRỐNG HOÀN TOÀN)
-    let savedKeys = JSON.parse(localStorage.getItem('ducky_keys') || "null");
-    if (!savedKeys) {
-      savedKeys = []; // Để trống
-      localStorage.setItem('ducky_keys', JSON.stringify(savedKeys));
-    }
+    const loadData = async () => {
+      // 1. KÉO KHO KEY TRỰC TIẾP TỪ ĐÁM MÂY SUPABASE (FIX BUG LỆCH PHA)
+      const { data: dbKeys, error: keyErr } = await supabase
+        .from('ducky_keys')
+        .select('*');
+        
+      if (keyErr) console.error("Lỗi tải Key:", keyErr);
+        
+      const allKeys = dbKeys || [];
+      const availableKeys = allKeys.filter(k => k.status === 'available');
+      setTotalStock(availableKeys.length);
 
-    setTotalStock(savedKeys.filter((k: any) => k.status === 'available').length);
+      // 2. KÉO GÓI SẢN PHẨM TỪ HỆ THỐNG
+      const savedPackages = localStorage.getItem('ducky_packages');
+      const loadedPackages = savedPackages ? JSON.parse(savedPackages) : [
+        { id: "1d", name: "1 Ngày", price: 20000, ctvPrice: 15000, popular: false },
+        { id: "7d", name: "7 Ngày", price: 100000, ctvPrice: 70000, popular: true },
+        { id: "30d", name: "30 Ngày", price: 300000, ctvPrice: 200000, popular: false },
+      ];
+      
+      const packagesWithStock = loadedPackages.map((pkg: any) => ({
+        ...pkg,
+        // ÉP KIỂU STRING để đếm Key chuẩn xác
+        stock: availableKeys.filter((k: any) => String(k.package_id) === String(pkg.id) || String(k.packageId) === String(pkg.id)).length
+      }));
 
-    // 2. Kéo gói từ LocalStorage
-    const savedPackages = localStorage.getItem('ducky_packages');
-    const loadedPackages = savedPackages ? JSON.parse(savedPackages) : [
-      { id: "1d", name: "1 Ngày", price: 20000, popular: false },
-      { id: "7d", name: "7 Ngày", price: 100000, popular: true },
-      { id: "30d", name: "30 Ngày", price: 300000, popular: false },
-    ];
-    
-    const packagesWithStock = loadedPackages.map((pkg: any) => ({
-      ...pkg,
-      stock: savedKeys.filter((k: any) => k.packageId === pkg.id && k.status === 'available').length
-    }));
+      setPackages(packagesWithStock);
+      const availablePkg = packagesWithStock.find((p: any) => p.stock > 0);
+      setSelectedPackage(availablePkg || null);
 
-    setPackages(packagesWithStock);
-    const availablePkg = packagesWithStock.find((p: any) => p.stock > 0);
-    setSelectedPackage(availablePkg || null);
-
-    const fetchBalance = async () => {
+      // 3. LẤY SỐ DƯ, QUYỀN VÀ GIÁ VIP TỪ SUPABASE
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         setUserId(user.id);
-        const { data } = await supabase.from('profiles').select('balance').eq('id', user.id).single();
-        if (data) setBalance(data.balance || 0);
+        const { data } = await supabase.from('profiles').select('balance, role, custom_prices').eq('id', user.id).single();
+        if (data) {
+          setBalance(data.balance || 0);
+          setRole(data.role || "user");
+          setCustomPrices(data.custom_prices || {}); 
+        }
+      }
+
+      // XỬ LÝ QUAY LẠI SAU KHI THANH TOÁN QR THÀNH CÔNG
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('status') === 'success' || urlParams.get('code') === '00' || urlParams.get('cancel') === 'false') {
+        const pendingOrder = JSON.parse(localStorage.getItem('ducky_pending_qr_order') || "null");
+        if (pendingOrder) {
+          const { data: freshKeys } = await supabase.from('ducky_keys').select('*').eq('status', 'available');
+          const keysToAssign = (freshKeys || []).filter(k => String(k.package_id) === String(pendingOrder.id) || String(k.packageId) === String(pendingOrder.id));
+            
+          if (keysToAssign && keysToAssign.length > 0) {
+            const assignedKey = keysToAssign[0];
+            await supabase.from('ducky_keys').update({ status: 'sold' }).eq('id', assignedKey.id);
+            
+            const newOrder = { id: "ORD-" + Math.floor(Math.random()*90000), product: `HyperCheat (${pendingOrder.name})`, amount: pendingOrder.price.toLocaleString() + "đ", status: "completed", date: new Date().toLocaleString('vi-VN'), key: assignedKey.key_code };
+            localStorage.setItem('ducky_orders', JSON.stringify([newOrder, ...JSON.parse(localStorage.getItem('ducky_orders') || "[]")]));
+            localStorage.removeItem('ducky_pending_qr_order');
+            
+            window.history.replaceState({}, '', window.location.pathname);
+            alert("Thanh toán thành công! Key đã sẵn sàng trong mục đơn hàng.");
+            navigate('/orders');
+          }
+        }
       }
     };
-    fetchBalance();
+    loadData();
   }, []);
 
   const handleOpenModal = (product: any) => {
@@ -88,19 +125,55 @@ export function Products() {
     }
   };
 
-  const originalPrice = selectedPackage ? selectedPackage.price : 0;
+  // LOGIC TÍNH GIÁ ĐỒNG BỘ VỚI HOME
+  const getDisplayOriginalPrice = () => {
+    if (!selectedPackage) return 0;
+    if (customPrices && customPrices[selectedPackage.id] > 0) {
+      return customPrices[selectedPackage.id];
+    }
+    if (role === 'ctv') {
+      return selectedPackage.ctvPrice || Math.floor(selectedPackage.price * 0.7);
+    }
+    return selectedPackage.price;
+  };
+
+  const originalPrice = getDisplayOriginalPrice();
   const discountAmount = (originalPrice * appliedDiscount) / 100;
   const finalPrice = originalPrice - discountAmount;
 
-  // --- XỬ LÝ THANH TOÁN & RÚT KEY THẬT ---
+  // --- XỬ LÝ THANH TOÁN TỪ ĐÁM MÂY ---
   const handleCheckout = async () => {
     if (!selectedPackage) return;
 
-    let currentKeys = JSON.parse(localStorage.getItem('ducky_keys') || "[]");
-    const availableKeyIndex = currentKeys.findIndex((k: any) => k.packageId === selectedPackage.id && k.status === 'available');
+    const { data: allAvailableKeys } = await supabase.from('ducky_keys').select('*').eq('status', 'available');
+    const keysToAssign = (allAvailableKeys || []).filter(k => String(k.package_id) === String(selectedPackage.id) || String(k.packageId) === String(selectedPackage.id));
 
-    if (availableKeyIndex === -1) {
+    if (!keysToAssign || keysToAssign.length === 0) {
       alert("Rất tiếc, gói này vừa hết key! Vui lòng chọn gói khác.");
+      return; 
+    }
+
+    if (paymentMethod === 'qr') {
+      setLoadingPay(true);
+      try {
+        localStorage.setItem('ducky_pending_qr_order', JSON.stringify({
+          id: selectedPackage.id,
+          name: selectedPackage.name,
+          price: finalPrice
+        }));
+        const { data, error } = await supabase.functions.invoke('create-payos-order', {
+          body: { amount: finalPrice }
+        });
+        if (error) throw error;
+        if (data?.checkoutUrl) {
+          window.location.href = data.checkoutUrl;
+          return; 
+        }
+      } catch (err) {
+        alert("Lỗi tạo link thanh toán QR.");
+      } finally {
+        setLoadingPay(false);
+      }
       return; 
     }
 
@@ -116,9 +189,8 @@ export function Products() {
       }
     }
 
-    const assignedKey = currentKeys[availableKeyIndex];
-    currentKeys[availableKeyIndex].status = 'sold';
-    localStorage.setItem('ducky_keys', JSON.stringify(currentKeys));
+    const assignedKey = keysToAssign[0];
+    await supabase.from('ducky_keys').update({ status: 'sold' }).eq('id', assignedKey.id);
 
     const orderId = "ORD-" + Math.floor(10000 + Math.random() * 90000);
     const now = new Date();
@@ -245,6 +317,17 @@ export function Products() {
                     <div className="space-y-3">
                       {packages.map((pkg) => {
                         const isOutOfStock = pkg.stock === 0;
+                        const pkgCustomPrice = customPrices?.[pkg.id];
+                        const hasCustomPrice = pkgCustomPrice && pkgCustomPrice > 0;
+                        const isCTV = role === 'ctv';
+                        
+                        let displayPrice = pkg.price;
+                        if (hasCustomPrice) {
+                          displayPrice = pkgCustomPrice;
+                        } else if (isCTV) {
+                          displayPrice = pkg.ctvPrice || Math.floor(pkg.price * 0.7);
+                        }
+
                         return (
                         <label 
                           key={pkg.id}
@@ -279,7 +362,20 @@ export function Products() {
                               </span>
                             </div>
                           </div>
-                          <span className="font-bold text-gray-900 ml-8 sm:ml-0">{pkg.price.toLocaleString('vi-VN')} đ</span>
+                          
+                          <div>
+                            {(hasCustomPrice || isCTV) ? (
+                              <div className="text-right ml-8 sm:ml-0">
+                                <span className="text-xs text-gray-400 line-through mr-2">{pkg.price.toLocaleString('vi-VN')} đ</span>
+                                <span className="font-bold text-rose-600">{displayPrice.toLocaleString('vi-VN')} đ</span>
+                                <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded ml-2">
+                                  {hasCustomPrice ? "Giá VIP" : "Giá CTV"}
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="font-bold text-gray-900 ml-8 sm:ml-0">{pkg.price.toLocaleString('vi-VN')} đ</span>
+                            )}
+                          </div>
                         </label>
                       )})}
                     </div>
@@ -309,7 +405,6 @@ export function Products() {
                     <h4 className="font-bold text-gray-900 mb-5 flex items-center gap-2">
                       <Tag className="w-5 h-5 text-gray-700"/> Mã giảm giá
                     </h4>
-                    {/* BƯỚC SỬA LỖI UI MỤC VOUCHER Ở ĐÂY */}
                     <div className="flex flex-col sm:flex-row gap-2">
                       <input 
                         type="text" 
@@ -355,11 +450,11 @@ export function Products() {
                     
                     <button 
                       onClick={handleCheckout}
-                      disabled={!selectedPackage || selectedPackage.stock === 0}
+                      disabled={loadingPay || !selectedPackage || selectedPackage.stock === 0}
                       className="w-full bg-white border-2 border-[#8B5CF6] hover:bg-[#8B5CF6] hover:text-white disabled:bg-gray-100 disabled:border-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed text-[#8B5CF6] py-3.5 rounded-xl font-bold transition-all shadow-sm flex items-center justify-center gap-2 group"
                     >
-                      <Lock className={`w-4 h-4 transition-colors ${!selectedPackage || selectedPackage.stock === 0 ? 'text-gray-400' : 'group-hover:text-white'}`}/> 
-                      Thanh toán ngay
+                      {loadingPay ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className={`w-4 h-4 transition-colors ${!selectedPackage || selectedPackage.stock === 0 ? 'text-gray-400' : 'group-hover:text-white'}`}/>} 
+                      {loadingPay ? "Đang xử lý..." : "Thanh toán ngay"}
                     </button>
                     
                     <p className="text-[11px] text-gray-400 text-center mt-5 leading-relaxed font-medium">
