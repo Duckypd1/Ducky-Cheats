@@ -53,15 +53,13 @@ export function Wallet() {
             const amountToAdd = parseInt(pendingAmountStr, 10);
             currentBalance += amountToAdd; 
             
-            // 💥 FIX LỖI: Dùng UPDATE thay vì UPSERT để không bị lỗi ghi đè Database
+            // Dùng UPDATE thay vì UPSERT để không bị lỗi ghi đè Database
             const { error: updateErr } = await supabase.from('profiles').update({ balance: currentBalance }).eq('id', user.id);
             
-            // Nếu khách chưa có hồ sơ thì mới dùng upsert để tạo mới
             if (updateErr) {
               await supabase.from('profiles').upsert({ id: user.id, email: user.email, balance: currentBalance });
             }
 
-            // Ghi nhận lịch sử giao dịch thật
             let currentTxns = JSON.parse(localStorage.getItem('ducky_transactions') || "[]");
 
             const newTxn = {
@@ -87,7 +85,7 @@ export function Wallet() {
              else setTransactions([]);
           }
         } else {
-          // TRƯỜNG HỢP MỞ TRANG BÌNH THƯỜNG (Không phải từ PayOS trả về)
+          // TRƯỜNG HỢP MỞ TRANG BÌNH THƯỜNG
           if (!profile) {
              await supabase.from('profiles').upsert({ id: user.id, email: user.email, balance: 0 });
           }
@@ -96,7 +94,7 @@ export function Wallet() {
           if (savedTxns) {
             setTransactions(JSON.parse(savedTxns));
           } else {
-            setTransactions([]);
+            setTransactions([]); // KHÔNG CÓ DỮ LIỆU ẢO
             localStorage.setItem('ducky_transactions', JSON.stringify([]));
           }
         }
