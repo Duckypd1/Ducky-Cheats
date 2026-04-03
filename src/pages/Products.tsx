@@ -55,7 +55,6 @@ export function Products() {
         ];
       }
       
-      // BỘ LỌC THÔNG MINH
       const packagesWithStock = loadedPackages.map((pkg: any) => {
         const stock = availableKeys.filter((k: any) => {
           const kid = String(k.package_id || k.packageId);
@@ -73,7 +72,6 @@ export function Products() {
 
       setPackages(packagesWithStock);
       
-      // ĐỒNG BỘ HIỂN THỊ
       const validTotalStock = packagesWithStock.reduce((sum, p) => sum + p.stock, 0);
       setTotalStock(validTotalStock);
 
@@ -83,7 +81,9 @@ export function Products() {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         setUserId(user.id);
-        const { data } = await supabase.from('profiles').select('balance, role, custom_prices').eq('id', user.id).single();
+        
+        // 💥 DÙNG MAYBESINGLE ĐỂ FIX LỖI CRASH
+        const { data } = await supabase.from('profiles').select('balance, role, custom_prices').eq('id', user.id).maybeSingle();
         if (data) {
           setBalance(data.balance || 0);
           setRole(data.role || "user");
@@ -112,8 +112,18 @@ export function Products() {
             const assignedKey = keysToAssign[0];
             await supabase.from('ducky_keys').update({ status: 'sold' }).eq('id', assignedKey.id);
             
-            const newOrder = { id: "ORD-" + Math.floor(Math.random()*90000), product: `HyperCheat (${pendingOrder.name})`, amount: pendingOrder.price.toLocaleString() + "đ", status: "completed", date: new Date().toLocaleString('vi-VN'), key: assignedKey.key_code };
+            const orderId = "ORD-" + Math.floor(10000 + Math.random() * 90000);
+            const dateStr = new Date().toLocaleString('vi-VN');
+
+            // 1. Tạo Đơn hàng
+            const newOrder = { id: orderId, product: `Ducky Cheat AOV VIP (${pendingOrder.name})`, amount: pendingOrder.price.toLocaleString() + "đ", status: "completed", date: dateStr, key: assignedKey.key_code };
             localStorage.setItem('ducky_orders', JSON.stringify([newOrder, ...JSON.parse(localStorage.getItem('ducky_orders') || "[]")]));
+
+            // 2. 💥 TẠO LỊCH SỬ GIAO DỊCH KHI THANH TOÁN QR
+            const newTxn = { id: "TXN-" + Math.floor(100000 + Math.random() * 900000), type: "purchase", amount: "-" + pendingOrder.price.toLocaleString('vi-VN') + "đ", date: dateStr, status: "success", description: `Mua Ducky Cheat AOV VIP (${pendingOrder.name}) qua QR` };
+            let savedTxns = JSON.parse(localStorage.getItem('ducky_transactions') || "[]");
+            localStorage.setItem('ducky_transactions', JSON.stringify([newTxn, ...savedTxns]));
+
             localStorage.removeItem('ducky_pending_qr_order');
             
             window.history.replaceState({}, '', window.location.pathname);
@@ -204,7 +214,13 @@ export function Products() {
       }
       const newBalance = balance - finalPrice;
       if (userId) {
-        await supabase.from('profiles').update({ balance: newBalance }).eq('id', userId);
+        // BẢO VỆ CHẶT CẬP NHẬT VÍ KHI MUA BẰNG VÍ
+        const { data: checkProfile } = await supabase.from('profiles').select('id').eq('id', userId).maybeSingle();
+        if (checkProfile) {
+          await supabase.from('profiles').update({ balance: newBalance }).eq('id', userId);
+        } else {
+          await supabase.from('profiles').insert({ id: userId, balance: newBalance });
+        }
         setBalance(newBalance);
       }
     }
@@ -213,8 +229,7 @@ export function Products() {
     await supabase.from('ducky_keys').update({ status: 'sold' }).eq('id', assignedKey.id);
 
     const orderId = "ORD-" + Math.floor(10000 + Math.random() * 90000);
-    const now = new Date();
-    const dateStr = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const dateStr = new Date().toLocaleString('vi-VN');
 
     const newOrder = { id: orderId, product: `Ducky Cheat AOV VIP (${selectedPackage.name})`, amount: finalPrice.toLocaleString('vi-VN') + "đ", status: "completed", date: dateStr, key: assignedKey.key_code };
     let savedOrders = JSON.parse(localStorage.getItem('ducky_orders') || "[]");

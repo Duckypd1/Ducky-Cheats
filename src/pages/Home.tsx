@@ -62,7 +62,6 @@ export function Home() {
         ];
       }
       
-      // BỘ LỌC THÔNG MINH: Quét chuẩn xác từng key
       const packagesWithStock = loadedPackages.map((pkg: any) => {
         const stock = availableKeys.filter((k: any) => {
           const kid = String(k.package_id || k.packageId);
@@ -80,7 +79,6 @@ export function Home() {
 
       setPackages(packagesWithStock);
       
-      // CHỈ ĐẾM TỔNG KEY HỢP LỆ (Khớp 100% ngoài và trong)
       const validTotalStock = packagesWithStock.reduce((sum: number, p: any) => sum + p.stock, 0);
       setTotalStock(validTotalStock);
 
@@ -98,7 +96,8 @@ export function Home() {
         const savedAvatar = localStorage.getItem(`ducky_avatar_${user.id}`);
         if (savedAvatar) userAvatar = savedAvatar;
 
-        const { data } = await supabase.from('profiles').select('balance, role, custom_prices').eq('id', user.id).single();
+        // 💥 DÙNG MAYBESINGLE ĐỂ FIX LỖI CRASH KHI KHÁCH MỚI TINH
+        const { data } = await supabase.from('profiles').select('balance, role, custom_prices').eq('id', user.id).maybeSingle();
         if (data) {
           userBalance = data.balance || 0;
           setBalance(userBalance);
@@ -128,8 +127,18 @@ export function Home() {
             const assignedKey = keysToAssign[0];
             await supabase.from('ducky_keys').update({ status: 'sold' }).eq('id', assignedKey.id);
             
-            const newOrder = { id: "ORD-" + Math.floor(Math.random()*90000), product: `HyperCheat (${pendingOrder.name})`, amount: pendingOrder.price.toLocaleString() + "đ", status: "completed", date: new Date().toLocaleString('vi-VN'), key: assignedKey.key_code };
+            const orderId = "ORD-" + Math.floor(10000 + Math.random() * 90000);
+            const dateStr = new Date().toLocaleString('vi-VN');
+
+            // 1. Tạo Đơn hàng
+            const newOrder = { id: orderId, product: `Ducky Cheat AOV VIP (${pendingOrder.name})`, amount: pendingOrder.price.toLocaleString() + "đ", status: "completed", date: dateStr, key: assignedKey.key_code };
             localStorage.setItem('ducky_orders', JSON.stringify([newOrder, ...JSON.parse(localStorage.getItem('ducky_orders') || "[]")]));
+
+            // 2. 💥 TẠO LỊCH SỬ GIAO DỊCH (FIX LỖI MẤT GIAO DỊCH TRONG VÍ)
+            const newTxn = { id: "TXN-" + Math.floor(100000 + Math.random() * 900000), type: "purchase", amount: "-" + pendingOrder.price.toLocaleString('vi-VN') + "đ", date: dateStr, status: "success", description: `Mua Ducky Cheat AOV VIP (${pendingOrder.name}) qua QR` };
+            let savedTxns = JSON.parse(localStorage.getItem('ducky_transactions') || "[]");
+            localStorage.setItem('ducky_transactions', JSON.stringify([newTxn, ...savedTxns]));
+
             localStorage.removeItem('ducky_pending_qr_order');
             
             window.history.replaceState({}, '', window.location.pathname);
@@ -139,40 +148,76 @@ export function Home() {
         }
       }
 
-      const currentDay = date.getDate();
-      const monthIndex = date.getMonth();
+      // 4. LOGIC BẢNG XẾP HẠNG ĐỒNG BỘ ĐÁM MÂY SUPABASE
+      const { data: topProfiles } = await supabase
+        .from('profiles')
+        .select('*')
+        .order('balance', { ascending: false })
+        .limit(10);
+
       let combined = [];
 
-      if (userBalance > 0) {
-        combined.push({ name: userEmail.split('@')[0] + " (Bạn)", amount: userBalance, color: "text-rose-600", bg: "bg-rose-100", letter: userEmail.charAt(0).toUpperCase(), img: userAvatar });
-      }
-
-      if (currentDay > 20) {
-        const botPool = [
-          { name: "Hoàng Anh", color: "text-amber-600", bg: "bg-amber-100", img: "https://i.pravatar.cc/150?u=hoanganh" },
-          { name: "Quân Lê", color: "text-[#4F46E5]", bg: "bg-indigo-100", letter: "Q" },
-          { name: "Hùng Mai", color: "text-purple-600", bg: "bg-purple-100", letter: "H" },
-          { name: "Tiến Đạt", color: "text-emerald-600", bg: "bg-emerald-100", letter: "T" },
-          { name: "Minh Tuấn", color: "text-red-600", bg: "bg-red-100", img: "https://i.pravatar.cc/150?u=minhtuan" },
+      if (topProfiles && topProfiles.length > 0 && topProfiles.some(p => p.balance > 0)) {
+        const colors = [
+          { color: "text-rose-600", bg: "bg-rose-100" },
+          { color: "text-[#4F46E5]", bg: "bg-indigo-100" },
+          { color: "text-amber-600", bg: "bg-amber-100" },
+          { color: "text-emerald-600", bg: "bg-emerald-100" },
+          { color: "text-purple-600", bg: "bg-purple-100" },
         ];
-        const b1 = botPool[(monthIndex * 3) % botPool.length];
-        const b2 = botPool[(monthIndex * 3 + 1) % botPool.length];
-        const b3 = botPool[(monthIndex * 3 + 2) % botPool.length];
 
-        const maxTargets = [1200000, 800000, 500000];
-        let generatedAmounts = maxTargets.map((target) => {
-          const dailyAvg = target / 30;
-          return Math.floor(dailyAvg * currentDay) + Math.floor(Math.random() * 30000);
-        });
-        generatedAmounts.sort((a, b) => b - a);
+        combined = topProfiles
+          .filter((p: any) => p.balance > 0)
+          .map((p: any, idx: number) => {
+            const isMe = user && p.id === user.id;
+            let rawName = p.email ? p.email.split('@')[0] : `Thành viên ${p.id.substring(0, 4).toUpperCase()}`;
+            const displayName = isMe ? `${rawName} (Bạn)` : `${rawName.substring(0, 4)}***`;
+            const theme = colors[idx % colors.length];
 
-        combined.push({ ...b1, amount: generatedAmounts[0] });
-        combined.push({ ...b2, amount: generatedAmounts[1] });
-        combined.push({ ...b3, amount: generatedAmounts[2] });
+            return {
+              name: displayName,
+              amount: p.balance,
+              color: theme.color,
+              bg: theme.bg,
+              letter: rawName.charAt(0).toUpperCase(),
+              img: p.avatar_url || null
+            };
+          });
+      } else {
+        const currentDay = date.getDate();
+        const monthIndex = date.getMonth();
+        
+        if (userBalance > 0) {
+          combined.push({ name: userEmail.split('@')[0] + " (Bạn)", amount: userBalance, color: "text-rose-600", bg: "bg-rose-100", letter: userEmail.charAt(0).toUpperCase(), img: userAvatar });
+        }
+
+        if (currentDay > 20) {
+          const botPool = [
+            { name: "Hoàng Anh", color: "text-amber-600", bg: "bg-amber-100", img: "https://i.pravatar.cc/150?u=hoanganh" },
+            { name: "Quân Lê", color: "text-[#4F46E5]", bg: "bg-indigo-100", letter: "Q" },
+            { name: "Hùng Mai", color: "text-purple-600", bg: "bg-purple-100", letter: "H" },
+            { name: "Tiến Đạt", color: "text-emerald-600", bg: "bg-emerald-100", letter: "T" },
+            { name: "Minh Tuấn", color: "text-red-600", bg: "bg-red-100", img: "https://i.pravatar.cc/150?u=minhtuan" },
+          ];
+          const b1 = botPool[(monthIndex * 3) % botPool.length];
+          const b2 = botPool[(monthIndex * 3 + 1) % botPool.length];
+          const b3 = botPool[(monthIndex * 3 + 2) % botPool.length];
+
+          const maxTargets = [1200000, 800000, 500000];
+          let generatedAmounts = maxTargets.map((target) => {
+            const dailyAvg = target / 30;
+            return Math.floor(dailyAvg * currentDay) + Math.floor(Math.random() * 30000);
+          });
+          generatedAmounts.sort((a, b) => b - a);
+
+          combined.push({ ...b1, amount: generatedAmounts[0] });
+          combined.push({ ...b2, amount: generatedAmounts[1] });
+          combined.push({ ...b3, amount: generatedAmounts[2] });
+        }
       }
 
       combined.sort((a, b) => b.amount - a.amount);
-      const finalLeaderboard = combined.slice(0, 3).map((u, idx) => ({ ...u, top: idx + 1 }));
+      const finalLeaderboard = combined.slice(0, 5).map((u, idx) => ({ ...u, top: idx + 1 }));
       setLeaderboard(finalLeaderboard);
     };
 
@@ -264,7 +309,13 @@ export function Home() {
       }
       const newBalance = balance - finalPrice;
       if (userId) {
-        await supabase.from('profiles').update({ balance: newBalance }).eq('id', userId);
+        // BẢO VỆ CHẶT CẬP NHẬT VÍ KHI MUA BẰNG VÍ
+        const { data: checkProfile } = await supabase.from('profiles').select('id').eq('id', userId).maybeSingle();
+        if (checkProfile) {
+          await supabase.from('profiles').update({ balance: newBalance }).eq('id', userId);
+        } else {
+          await supabase.from('profiles').insert({ id: userId, balance: newBalance });
+        }
         setBalance(newBalance);
       }
     }
@@ -273,8 +324,7 @@ export function Home() {
     await supabase.from('ducky_keys').update({ status: 'sold' }).eq('id', assignedKey.id);
 
     const orderId = "ORD-" + Math.floor(10000 + Math.random() * 90000);
-    const now = new Date();
-    const dateStr = `${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const dateStr = new Date().toLocaleString('vi-VN');
 
     const newOrder = {
       id: orderId,

@@ -17,19 +17,19 @@ export function Wallet() {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
 
-        // 1. LẤY SỐ DƯ HIỆN TẠI TỪ DB
+        // 1. DÙNG maybeSingle() ĐỂ KHÔNG BỊ CRASH NẾU TÀI KHOẢN MỚI
         let currentBalance = 0;
         const { data: profile } = await supabase
           .from('profiles')
-          .select('balance')
+          .select('*')
           .eq('id', user.id)
-          .single();
+          .maybeSingle();
 
         if (profile) {
           currentBalance = profile.balance || 0;
         }
 
-        // 2. NHẬN DIỆN KẾT QUẢ TỪ PAYOS TRẢ VỀ
+        // 2. XỬ LÝ KẾT QUẢ TỪ PAYOS TRẢ VỀ
         const urlParams = new URLSearchParams(window.location.search);
         const statusParam = urlParams.get('status');
         const cancelParam = urlParams.get('cancel');
@@ -44,8 +44,7 @@ export function Wallet() {
           alert("Giao dịch nạp tiền đã bị hủy.");
           
           const savedTxns = localStorage.getItem('ducky_transactions');
-          if (savedTxns) setTransactions(JSON.parse(savedTxns));
-          else setTransactions([]);
+          setTransactions(savedTxns ? JSON.parse(savedTxns) : []);
 
         } else if (isSuccess) {
           const pendingAmountStr = localStorage.getItem('ducky_pending_amount');
@@ -53,13 +52,14 @@ export function Wallet() {
             const amountToAdd = parseInt(pendingAmountStr, 10);
             currentBalance += amountToAdd; 
             
-            // Dùng UPDATE thay vì UPSERT để không bị lỗi ghi đè Database
-            const { error: updateErr } = await supabase.from('profiles').update({ balance: currentBalance }).eq('id', user.id);
-            
-            if (updateErr) {
-              await supabase.from('profiles').upsert({ id: user.id, email: user.email, balance: currentBalance });
+            // 💥 BẢO VỆ CHẶT: Chỉ Update nếu đã có profile, nếu chưa thì Insert
+            if (profile) {
+               await supabase.from('profiles').update({ balance: currentBalance }).eq('id', user.id);
+            } else {
+               await supabase.from('profiles').insert({ id: user.id, email: user.email, balance: currentBalance });
             }
 
+            // Ghi nhận lịch sử giao dịch thật
             let currentTxns = JSON.parse(localStorage.getItem('ducky_transactions') || "[]");
 
             const newTxn = {
@@ -81,13 +81,12 @@ export function Wallet() {
             alert(`✅ Nạp thành công ${amountToAdd.toLocaleString('vi-VN')}đ vào ví!`);
           } else {
              const savedTxns = localStorage.getItem('ducky_transactions');
-             if (savedTxns) setTransactions(JSON.parse(savedTxns));
-             else setTransactions([]);
+             setTransactions(savedTxns ? JSON.parse(savedTxns) : []);
           }
         } else {
-          // TRƯỜNG HỢP MỞ TRANG BÌNH THƯỜNG
+          // TRƯỜNG HỢP MỞ TRANG BÌNH THƯỜNG (Khởi tạo nếu là người dùng mới)
           if (!profile) {
-             await supabase.from('profiles').upsert({ id: user.id, email: user.email, balance: 0 });
+             await supabase.from('profiles').insert({ id: user.id, email: user.email, balance: 0 });
           }
 
           const savedTxns = localStorage.getItem('ducky_transactions');
@@ -139,9 +138,11 @@ export function Wallet() {
         if (user) {
           const newTotal = balance + amount;
           
-          const { error: dbError } = await supabase.from('profiles').update({ balance: newTotal }).eq('id', user.id);
-          if (dbError) {
-             await supabase.from('profiles').upsert({ id: user.id, email: user.email, balance: newTotal });
+          const { data: pCheck } = await supabase.from('profiles').select('id').eq('id', user.id).maybeSingle();
+          if (pCheck) {
+             await supabase.from('profiles').update({ balance: newTotal }).eq('id', user.id);
+          } else {
+             await supabase.from('profiles').insert({ id: user.id, email: user.email, balance: newTotal });
           }
           
           setBalance(newTotal);
