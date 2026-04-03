@@ -2,10 +2,6 @@ import React, { useState, useEffect } from "react";
 import { Wallet as WalletIcon, ArrowUpRight, ArrowDownRight, QrCode, CreditCard, Loader2, CheckCircle2 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 
-const initialMockTxns = [
-  { id: "TXN-001", type: "deposit", amount: "+500,000đ", date: "29/03/2026 14:00", status: "success", description: "Nạp tiền tự động (payOS)" }
-];
-
 export function Wallet() {
   const [showTopup, setShowTopup] = useState(false);
   const [amount, setAmount] = useState<number>(50000);
@@ -49,24 +45,24 @@ export function Wallet() {
           
           const savedTxns = localStorage.getItem('ducky_transactions');
           if (savedTxns) setTransactions(JSON.parse(savedTxns));
-          else setTransactions(initialMockTxns);
+          else setTransactions([]);
 
         } else if (isSuccess) {
           const pendingAmountStr = localStorage.getItem('ducky_pending_amount');
           if (pendingAmountStr) {
             const amountToAdd = parseInt(pendingAmountStr, 10);
-            currentBalance += amountToAdd; // Cộng tiền thực tế
+            currentBalance += amountToAdd; 
             
-            // 💥 BƯỚC QUAN TRỌNG: Dùng UPSERT để ép Database phải ghi nhận (Chống lỗi trượt dữ liệu)
-            await supabase.from('profiles').upsert({ 
-              id: user.id, 
-              email: user.email, 
-              balance: currentBalance 
-            });
+            // 💥 FIX LỖI: Dùng UPDATE thay vì UPSERT để không bị lỗi ghi đè Database
+            const { error: updateErr } = await supabase.from('profiles').update({ balance: currentBalance }).eq('id', user.id);
+            
+            // Nếu khách chưa có hồ sơ thì mới dùng upsert để tạo mới
+            if (updateErr) {
+              await supabase.from('profiles').upsert({ id: user.id, email: user.email, balance: currentBalance });
+            }
 
-            // Ghi nhận lịch sử giao dịch nạp tiền
-            let currentTxns = JSON.parse(localStorage.getItem('ducky_transactions') || "null");
-            if (!currentTxns) currentTxns = initialMockTxns;
+            // Ghi nhận lịch sử giao dịch thật
+            let currentTxns = JSON.parse(localStorage.getItem('ducky_transactions') || "[]");
 
             const newTxn = {
               id: "TXN-" + Math.floor(100000 + Math.random() * 900000),
@@ -86,30 +82,25 @@ export function Wallet() {
             
             alert(`✅ Nạp thành công ${amountToAdd.toLocaleString('vi-VN')}đ vào ví!`);
           } else {
-             // Trường hợp khách tự F5 lại trang
              const savedTxns = localStorage.getItem('ducky_transactions');
              if (savedTxns) setTransactions(JSON.parse(savedTxns));
-             else setTransactions(initialMockTxns);
+             else setTransactions([]);
           }
         } else {
-          // KHÔNG CÓ GIAO DỊCH -> Đảm bảo khách mới có file hồ sơ để chuẩn bị nạp
+          // TRƯỜNG HỢP MỞ TRANG BÌNH THƯỜNG (Không phải từ PayOS trả về)
           if (!profile) {
              await supabase.from('profiles').upsert({ id: user.id, email: user.email, balance: 0 });
-          } else if (user.email) {
-             // Vá lỗi Admin không tìm thấy email do tài khoản cũ thiếu thông tin
-             await supabase.from('profiles').upsert({ id: user.id, email: user.email, balance: currentBalance });
           }
 
           const savedTxns = localStorage.getItem('ducky_transactions');
           if (savedTxns) {
             setTransactions(JSON.parse(savedTxns));
           } else {
-            setTransactions(initialMockTxns);
-            localStorage.setItem('ducky_transactions', JSON.stringify(initialMockTxns));
+            setTransactions([]);
+            localStorage.setItem('ducky_transactions', JSON.stringify([]));
           }
         }
 
-        // CẬP NHẬT LÊN MÀN HÌNH CHÍNH
         setBalance(currentBalance);
       } catch (err) { 
         console.error("Lỗi khi tải hoặc cập nhật số dư:", err); 
@@ -123,7 +114,6 @@ export function Wallet() {
 
   const presetAmounts = [20000, 50000, 100000, 200000, 500000];
 
-  // --- HÀM XỬ LÝ NẠP TIỀN CHÍNH ---
   const handlePayment = async () => {
     setLoading(true);
     try {
@@ -151,33 +141,27 @@ export function Wallet() {
         if (user) {
           const newTotal = balance + amount;
           
-          // 💥 Tương tự, dùng UPSERT ép tạo hồ sơ nếu dùng Bypass
-          const { error: dbError } = await supabase.from('profiles').upsert({ 
-            id: user.id, 
-            email: user.email, 
-            balance: newTotal 
-          });
-          
+          const { error: dbError } = await supabase.from('profiles').update({ balance: newTotal }).eq('id', user.id);
           if (dbError) {
-            alert(`Lỗi Supabase (Chưa tắt RLS): ${dbError.message}`);
-          } else {
-            setBalance(newTotal);
-            let currentTxns = JSON.parse(localStorage.getItem('ducky_transactions') || JSON.stringify(initialMockTxns));
-            const newTxn = {
-              id: "TXN-" + Math.floor(100000 + Math.random() * 900000),
-              type: "deposit",
-              amount: "+" + amount.toLocaleString('vi-VN') + "đ",
-              date: new Date().toLocaleString('vi-VN'),
-              status: "success",
-              description: "Nạp tiền tự động (Test Bypass)"
-            };
-            const updatedTxns = [newTxn, ...currentTxns];
-            setTransactions(updatedTxns);
-            localStorage.setItem('ducky_transactions', JSON.stringify(updatedTxns));
-            
-            setShowTopup(false);
-            alert(`✅ Đã cộng thành công ${amount.toLocaleString('vi-VN')}đ!`);
+             await supabase.from('profiles').upsert({ id: user.id, email: user.email, balance: newTotal });
           }
+          
+          setBalance(newTotal);
+          let currentTxns = JSON.parse(localStorage.getItem('ducky_transactions') || "[]");
+          const newTxn = {
+            id: "TXN-" + Math.floor(100000 + Math.random() * 900000),
+            type: "deposit",
+            amount: "+" + amount.toLocaleString('vi-VN') + "đ",
+            date: new Date().toLocaleString('vi-VN'),
+            status: "success",
+            description: "Nạp tiền tự động (Test Bypass)"
+          };
+          const updatedTxns = [newTxn, ...currentTxns];
+          setTransactions(updatedTxns);
+          localStorage.setItem('ducky_transactions', JSON.stringify(updatedTxns));
+          
+          setShowTopup(false);
+          alert(`✅ Đã cộng thành công ${amount.toLocaleString('vi-VN')}đ!`);
         }
       }
     } finally {
@@ -258,7 +242,7 @@ export function Wallet() {
               </div>
             </div>
           ))}
-          {transactions.length === 0 && <div className="text-center py-8 text-gray-500 text-sm">Chưa có giao dịch nào.</div>}
+          {transactions.length === 0 && <div className="text-center py-8 text-gray-500 text-sm font-medium">Chưa có giao dịch nào.</div>}
         </div>
       </div>
     </div>

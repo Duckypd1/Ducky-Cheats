@@ -1,37 +1,19 @@
 import { useState, useEffect } from "react";
 import { Copy, Check, X, Key, Download } from "lucide-react";
 
-const initialMockOrders = [
-  {
-    id: "ORD-99281",
-    product: "Ducky Cheat AOV VIP (30 Ngày)",
-    amount: "300,000đ",
-    status: "completed",
-    date: "29/03/2026 14:30",
-    key: "DUCKY-AOV-30D-X92B-K19M"
-  },
-  {
-    id: "ORD-99280",
-    product: "Ducky Cheat AOV VIP (7 Ngày)",
-    amount: "100,000đ",
-    status: "completed",
-    date: "25/03/2026 09:15",
-    key: "DUCKY-AOV-7D-L92N-P01X"
-  }
-];
-
 export function Orders() {
   const [orders, setOrders] = useState<any[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<any | null>(null);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
+    // Đọc danh sách từ bộ nhớ. Nếu không có thì để trống hoàn toàn (Mảng rỗng [])
     const savedOrders = localStorage.getItem('ducky_orders');
     if (savedOrders) {
       setOrders(JSON.parse(savedOrders));
     } else {
-      setOrders(initialMockOrders);
-      localStorage.setItem('ducky_orders', JSON.stringify(initialMockOrders));
+      setOrders([]);
+      localStorage.setItem('ducky_orders', JSON.stringify([]));
     }
   }, []);
 
@@ -63,96 +45,106 @@ export function Orders() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {orders.map((order) => (
-                <tr key={order.id} className="hover:bg-gray-50/50 transition-colors">
-                  <td className="py-4 text-sm font-medium text-gray-900">{order.id}</td>
-                  <td className="py-4 text-sm text-gray-600">{order.product}</td>
-                  <td className="py-4 text-sm font-semibold text-gray-900">{order.amount}</td>
-                  <td className="py-4">
-                    {order.status === "completed" ? (
-                      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-green-50 text-green-600 border border-green-200">
-                        Đã thanh toán
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-orange-50 text-orange-600 border border-orange-200">
-                        Chờ thanh toán
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-4 text-sm text-gray-500">{order.date}</td>
-                  <td className="py-4 text-right">
-                    {order.status === "completed" && (
-                      <div className="flex items-center justify-end gap-2">
-                        <button 
-                          onClick={() => setSelectedOrder(order)}
-                          className="inline-flex items-center gap-1.5 bg-indigo-50 text-[#4F46E5] hover:bg-indigo-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
-                        >
-                          <Key className="w-4 h-4" />
-                          Xem Key
-                        </button>
-                        <a 
-                          href="https://hypercheats.vn/public/download/download.html?game=lienquan"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 bg-green-50 text-green-600 hover:bg-green-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
-                        >
-                          <Download className="w-4 h-4" />
-                          Tải Tool
-                        </a>
-                      </div>
-                    )}
-                  </td>
+              {orders.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-8 text-center text-gray-500 text-sm font-medium">Bạn chưa mua gói Cheat nào.</td>
                 </tr>
-              ))}
+              ) : (
+                orders.map((order) => (
+                  <tr key={order.id} className="hover:bg-gray-50/50 transition-colors">
+                    <td className="py-4 text-sm font-medium text-gray-900">{order.id}</td>
+                    <td className="py-4 text-sm text-gray-600">{order.product}</td>
+                    <td className="py-4 text-sm font-semibold text-gray-900">{order.amount}</td>
+                    <td className="py-4">
+                      {order.status === "completed" ? (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-green-50 text-green-600 border border-green-200">
+                          Đã thanh toán
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-orange-50 text-orange-600 border border-orange-200">
+                          Chờ thanh toán
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-4 text-sm text-gray-500">{order.date}</td>
+                    <td className="py-4 text-right">
+                      {order.status === "completed" && (
+                        <div className="flex items-center justify-end gap-2">
+                          <button 
+                            onClick={() => setSelectedOrder(order)}
+                            className="inline-flex items-center gap-1.5 bg-indigo-50 text-[#4F46E5] hover:bg-indigo-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+                          >
+                            <Key className="w-4 h-4" />
+                            Xem Key
+                          </button>
+                          <a 
+                            href="https://hypercheats.vn/public/download/download.html?game=lienquan"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 bg-green-50 text-green-600 hover:bg-green-100 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
+                          >
+                            <Download className="w-4 h-4" />
+                            Tải Tool
+                          </a>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
 
         {/* Mobile Cards */}
         <div className="md:hidden space-y-4">
-          {orders.map((order) => (
-            <div key={order.id} className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
-              <div className="flex justify-between items-start mb-3">
-                <div>
-                  <p className="text-xs text-gray-500 mb-1">{order.id}</p>
-                  <p className="text-sm font-bold text-gray-900">{order.product}</p>
+          {orders.length === 0 ? (
+            <div className="text-center py-8 text-gray-500 text-sm font-medium">Bạn chưa mua gói Cheat nào.</div>
+          ) : (
+            orders.map((order) => (
+              <div key={order.id} className="bg-gray-50 rounded-2xl p-4 border border-gray-100">
+                <div className="flex justify-between items-start mb-3">
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">{order.id}</p>
+                    <p className="text-sm font-bold text-gray-900">{order.product}</p>
+                  </div>
+                  {order.status === "completed" ? (
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-[10px] font-medium bg-green-50 text-green-600 border border-green-200">
+                      Đã thanh toán
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-[10px] font-medium bg-orange-50 text-orange-600 border border-orange-200">
+                      Chờ thanh toán
+                    </span>
+                  )}
                 </div>
-                {order.status === "completed" ? (
-                  <span className="inline-flex items-center px-2 py-1 rounded-full text-[10px] font-medium bg-green-50 text-green-600 border border-green-200">
-                    Đã thanh toán
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center px-2 py-1 rounded-full text-[10px] font-medium bg-orange-50 text-orange-600 border border-orange-200">
-                    Chờ thanh toán
-                  </span>
+                <div className="flex justify-between items-center mb-4">
+                  <p className="text-sm font-semibold text-gray-900">{order.amount}</p>
+                  <p className="text-xs text-gray-500">{order.date}</p>
+                </div>
+                {order.status === "completed" && (
+                  <div className="flex items-center gap-2 mt-4">
+                    <button 
+                      onClick={() => setSelectedOrder(order)}
+                      className="flex-1 flex items-center justify-center gap-2 bg-indigo-50 text-[#4F46E5] hover:bg-indigo-100 py-2 rounded-xl text-sm font-medium transition-colors"
+                    >
+                      <Key className="w-4 h-4" />
+                      Xem Key
+                    </button>
+                    <a 
+                      href="https://hypercheats.vn/public/download/download.html?game=lienquan"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 flex items-center justify-center gap-2 bg-green-50 text-green-600 hover:bg-green-100 py-2 rounded-xl text-sm font-medium transition-colors"
+                    >
+                      <Download className="w-4 h-4" />
+                      Tải Tool
+                    </a>
+                  </div>
                 )}
               </div>
-              <div className="flex justify-between items-center mb-4">
-                <p className="text-sm font-semibold text-gray-900">{order.amount}</p>
-                <p className="text-xs text-gray-500">{order.date}</p>
-              </div>
-              {order.status === "completed" && (
-                <div className="flex items-center gap-2 mt-4">
-                  <button 
-                    onClick={() => setSelectedOrder(order)}
-                    className="flex-1 flex items-center justify-center gap-2 bg-indigo-50 text-[#4F46E5] hover:bg-indigo-100 py-2 rounded-xl text-sm font-medium transition-colors"
-                  >
-                    <Key className="w-4 h-4" />
-                    Xem Key
-                  </button>
-                  <a 
-                    href="https://hypercheats.vn/public/download/download.html?game=lienquan"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex-1 flex items-center justify-center gap-2 bg-green-50 text-green-600 hover:bg-green-100 py-2 rounded-xl text-sm font-medium transition-colors"
-                  >
-                    <Download className="w-4 h-4" />
-                    Tải Tool
-                  </a>
-                </div>
-              )}
-            </div>
-          ))}
+            ))
+          )}
         </div>
       </div>
 
