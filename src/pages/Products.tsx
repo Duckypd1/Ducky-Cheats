@@ -113,8 +113,10 @@ export function Products() {
       } else if (isSuccess) {
         let isProcessed = false;
 
-        // A. Nhận diện khách Nạp Ví
         const pendingAmountStr = localStorage.getItem('ducky_pending_amount');
+        const pendingOrderStr = localStorage.getItem('ducky_pending_qr_order');
+
+        // LỚP BẢO VỆ: Chỉ xử lý 1 trong 2
         if (pendingAmountStr && user) {
           const amountToAdd = parseInt(pendingAmountStr, 10);
           const latestBalance = (profileData?.balance || 0) + amountToAdd;
@@ -134,11 +136,8 @@ export function Products() {
           localStorage.removeItem('ducky_pending_amount');
           isProcessed = true;
           alert(`✅ Nạp thành công ${amountToAdd.toLocaleString('vi-VN')}đ vào ví!`);
-        }
 
-        // B. Nhận diện khách Mua Key bằng QR
-        const pendingOrderStr = localStorage.getItem('ducky_pending_qr_order');
-        if (pendingOrderStr) {
+        } else if (pendingOrderStr) { // SỬ DỤNG ELSE IF
           const pendingOrder = JSON.parse(pendingOrderStr);
           const { data: freshKeys } = await supabase.from('ducky_keys').select('*').eq('status', 'available');
           const keysToAssign = (freshKeys || []).filter((k:any) => {
@@ -232,6 +231,7 @@ export function Products() {
     if (paymentMethod === 'qr') {
       setLoadingPay(true);
       try {
+        localStorage.removeItem('ducky_pending_amount'); // DỌN RÁC TRƯỚC KHI THỰC HIỆN LỆNH MỚI
         localStorage.setItem('ducky_pending_qr_order', JSON.stringify({ id: selectedPackage.id, name: selectedPackage.name, price: finalPrice }));
         const { data, error } = await supabase.functions.invoke('create-payos-order', { body: { amount: finalPrice } });
         if (error) throw error;

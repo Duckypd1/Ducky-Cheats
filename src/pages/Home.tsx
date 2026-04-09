@@ -40,11 +40,9 @@ export function Home() {
     setCurrentMonthStr(`Tháng ${String(date.getMonth() + 1).padStart(2, '0')}`);
 
     const loadData = async () => {
-      // 1. KÉO KEY TỪ SUPABASE
       const { data: dbKeys } = await supabase.from('ducky_keys').select('*').eq('status', 'available'); 
       const availableKeys = dbKeys || [];
 
-      // 2. KÉO GÓI SẢN PHẨM TỪ SUPABASE
       const { data: dbPackages } = await supabase.from('ducky_packages').select('*').order('price', { ascending: true });
       let loadedPackages = [];
       
@@ -87,7 +85,6 @@ export function Home() {
       const availablePkg = packagesWithStock.find((p: any) => p.stock > 0);
       setSelectedPackage(availablePkg || packagesWithStock[0] || DUMMY_PACKAGE);
 
-      // 3. LẤY DỮ LIỆU NGƯỜI DÙNG & VÍ
       let userBalance = 0;
       let userEmail = "";
       let userAvatar = "";
@@ -112,7 +109,6 @@ export function Home() {
         }
       }
 
-      // 💥 BỘ XỬ LÝ PAYOS TOÀN CỤC CHUẨN XÁC 100%
       const urlParams = new URLSearchParams(window.location.search);
       const statusParam = urlParams.get('status');
       const cancelParam = urlParams.get('cancel');
@@ -129,8 +125,10 @@ export function Home() {
       } else if (isSuccess) {
         let isProcessed = false;
 
-        // A. Nhận diện khách Nạp Ví
         const pendingAmountStr = localStorage.getItem('ducky_pending_amount');
+        const pendingOrderStr = localStorage.getItem('ducky_pending_qr_order');
+
+        // LỚP BẢO VỆ
         if (pendingAmountStr && user) {
           const amountToAdd = parseInt(pendingAmountStr, 10);
           const latestBalance = userBalance + amountToAdd;
@@ -151,11 +149,8 @@ export function Home() {
           localStorage.removeItem('ducky_pending_amount');
           isProcessed = true;
           alert(`✅ Nạp thành công ${amountToAdd.toLocaleString('vi-VN')}đ vào ví!`);
-        }
 
-        // B. Nhận diện khách Mua Key bằng QR
-        const pendingOrderStr = localStorage.getItem('ducky_pending_qr_order');
-        if (pendingOrderStr) {
+        } else if (pendingOrderStr) { // SỬ DỤNG ELSE IF
           const pendingOrder = JSON.parse(pendingOrderStr);
           const { data: freshKeys } = await supabase.from('ducky_keys').select('*').eq('status', 'available');
           const keysToAssign = (freshKeys || []).filter((k:any) => {
@@ -189,7 +184,6 @@ export function Home() {
         if (isProcessed) window.history.replaceState({}, document.title, window.location.pathname);
       }
 
-      // 4. LOGIC BẢNG XẾP HẠNG ĐỒNG BỘ ĐÁM MÂY SUPABASE
       const { data: topProfiles } = await supabase.from('profiles').select('*').order('balance', { ascending: false }).limit(10);
       let combined = [];
 
@@ -263,7 +257,11 @@ export function Home() {
   const handleApplyVoucher = async () => {
     if (!voucherCodeInput.trim()) return;
 
-    const { data: foundVoucher } = await supabase.from('ducky_vouchers').select('*').eq('code', voucherCodeInput.toUpperCase()).maybeSingle();
+    const { data: foundVoucher } = await supabase
+      .from('ducky_vouchers')
+      .select('*')
+      .eq('code', voucherCodeInput.toUpperCase())
+      .maybeSingle();
 
     if (foundVoucher && foundVoucher.quantity > 0) {
       setAppliedDiscount(foundVoucher.discount);
@@ -313,6 +311,7 @@ export function Home() {
     if (paymentMethod === 'qr') {
       setLoadingPay(true);
       try {
+        localStorage.removeItem('ducky_pending_amount'); // DỌN RÁC TRƯỚC KHI THỰC HIỆN LỆNH MỚI
         localStorage.setItem('ducky_pending_qr_order', JSON.stringify({
           id: selectedPackage.id,
           name: selectedPackage.name,

@@ -22,7 +22,6 @@ export function Wallet() {
         const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle();
         if (profile) currentBalance = profile.balance || 0;
 
-        // BỘ XỬ LÝ THANH TOÁN TOÀN CỤC
         const urlParams = new URLSearchParams(window.location.search);
         const statusParam = urlParams.get('status');
         const cancelParam = urlParams.get('cancel');
@@ -39,8 +38,10 @@ export function Wallet() {
         } else if (isSuccess) {
           let isProcessed = false;
 
-          // A. Xử lý nếu khách Nạp Ví
           const pendingAmountStr = localStorage.getItem('ducky_pending_amount');
+          const pendingOrderStr = localStorage.getItem('ducky_pending_qr_order');
+
+          // LỚP BẢO VỆ: Chỉ chạy 1 trong 2 lệnh
           if (pendingAmountStr) {
             const amountToAdd = parseInt(pendingAmountStr, 10);
             currentBalance += amountToAdd; 
@@ -59,11 +60,8 @@ export function Wallet() {
             localStorage.removeItem('ducky_pending_amount');
             isProcessed = true;
             alert(`✅ Nạp thành công ${amountToAdd.toLocaleString('vi-VN')}đ vào ví!`);
-          }
 
-          // B. Xử lý chéo nếu khách Mua Key bằng QR
-          const pendingOrderStr = localStorage.getItem('ducky_pending_qr_order');
-          if (pendingOrderStr) {
+          } else if (pendingOrderStr) { // SỬ DỤNG ELSE IF ĐỂ TRÁNH LỖI XUNG ĐỘT
             const pendingOrder = JSON.parse(pendingOrderStr);
             const { data: freshKeys } = await supabase.from('ducky_keys').select('*').eq('status', 'available');
             const keysToAssign = (freshKeys || []).filter((k:any) => {
@@ -82,8 +80,7 @@ export function Wallet() {
               await supabase.from('ducky_keys').update({ status: 'sold' }).eq('id', assignedKey.id);
               
               const newOrder = { id: "ORD-" + Math.floor(10000 + Math.random() * 90000), product: `HyperCheat (${pendingOrder.name})`, amount: pendingOrder.price.toLocaleString() + "đ", status: "completed", date: new Date().toLocaleString('vi-VN'), key: assignedKey.key_code };
-              let savedOrders = JSON.parse(localStorage.getItem('ducky_orders') || "[]");
-              localStorage.setItem('ducky_orders', JSON.stringify([newOrder, ...savedOrders]));
+              localStorage.setItem('ducky_orders', JSON.stringify([newOrder, ...JSON.parse(localStorage.getItem('ducky_orders') || "[]")]));
               
               const newTxn = { id: "TXN-" + Math.floor(100000 + Math.random() * 900000), type: "purchase", amount: "-" + pendingOrder.price.toLocaleString('vi-VN') + "đ", date: new Date().toLocaleString('vi-VN'), status: "success", description: `Mua Ducky Cheat (${pendingOrder.name}) qua QR` };
               let savedTxns = JSON.parse(localStorage.getItem('ducky_transactions') || "[]");
@@ -121,7 +118,9 @@ export function Wallet() {
   const handlePayment = async () => {
     setLoading(true);
     try {
+      localStorage.removeItem('ducky_pending_qr_order'); // DỌN RÁC TRƯỚC KHI THỰC HIỆN LỆNH MỚI
       localStorage.setItem('ducky_pending_amount', amount.toString());
+      
       const { data, error } = await supabase.functions.invoke('create-payos-order', { body: { amount: amount } });
       if (error) throw error;
       if (data?.checkoutUrl) window.location.href = data.checkoutUrl; 
@@ -144,6 +143,8 @@ export function Wallet() {
           const updatedTxns = [newTxn, ...currentTxns];
           setTransactions(updatedTxns);
           localStorage.setItem('ducky_transactions', JSON.stringify(updatedTxns));
+          
+          localStorage.removeItem('ducky_pending_amount');
           setShowTopup(false);
           alert(`✅ Đã cộng thành công ${amount.toLocaleString('vi-VN')}đ!`);
         }
