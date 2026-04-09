@@ -7,13 +7,12 @@ export function Orders() {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    // Đọc danh sách từ bộ nhớ. Nếu không có thì để trống hoàn toàn (Mảng rỗng [])
+    // CHỈ ĐỌC ĐƠN THẬT, NẾU CHƯA MUA GÌ THÌ HIỂN THỊ TRỐNG
     const savedOrders = localStorage.getItem('ducky_orders');
     if (savedOrders) {
       setOrders(JSON.parse(savedOrders));
     } else {
       setOrders([]);
-      localStorage.setItem('ducky_orders', JSON.stringify([]));
     }
   }, []);
 

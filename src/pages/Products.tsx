@@ -78,12 +78,17 @@ export function Products() {
       const availablePkg = packagesWithStock.find((p: any) => p.stock > 0);
       setSelectedPackage(availablePkg || packagesWithStock[0] || DUMMY_PACKAGE);
 
+      let userEmail = "";
       const { data: { user } } = await supabase.auth.getUser();
+      let profileData = null;
+
       if (user) {
         setUserId(user.id);
+        userEmail = user.email || "";
         
-        // 💥 DÙNG MAYBESINGLE ĐỂ FIX LỖI CRASH
         const { data } = await supabase.from('profiles').select('balance, role, custom_prices').eq('id', user.id).maybeSingle();
+        profileData = data;
+
         if (data) {
           setBalance(data.balance || 0);
           setRole(data.role || "user");
@@ -91,13 +96,52 @@ export function Products() {
         }
       }
 
+      // 💥 BỘ XỬ LÝ PAYOS TOÀN CỤC CHUẨN XÁC 100%
       const urlParams = new URLSearchParams(window.location.search);
-      if (urlParams.get('status') === 'success' || urlParams.get('code') === '00' || urlParams.get('cancel') === 'false') {
-        const pendingOrder = JSON.parse(localStorage.getItem('ducky_pending_qr_order') || "null");
-        if (pendingOrder) {
-          const { data: freshKeys } = await supabase.from('ducky_keys').select('*').eq('status', 'available');
+      const statusParam = urlParams.get('status');
+      const cancelParam = urlParams.get('cancel');
+      const codeParam = urlParams.get('code');
+
+      const isCanceled = cancelParam === 'true' || statusParam === 'cancel' || statusParam === 'CANCELLED';
+      const isSuccess = cancelParam === 'false' || statusParam === 'success' || statusParam === 'PAID' || codeParam === '00';
+
+      if (isCanceled) {
+        localStorage.removeItem('ducky_pending_amount');
+        localStorage.removeItem('ducky_pending_qr_order');
+        window.history.replaceState({}, document.title, window.location.pathname);
+        alert("Giao dịch đã bị hủy.");
+      } else if (isSuccess) {
+        let isProcessed = false;
+
+        // A. Nhận diện khách Nạp Ví
+        const pendingAmountStr = localStorage.getItem('ducky_pending_amount');
+        if (pendingAmountStr && user) {
+          const amountToAdd = parseInt(pendingAmountStr, 10);
+          const latestBalance = (profileData?.balance || 0) + amountToAdd;
           
-          const keysToAssign = (freshKeys || []).filter(k => {
+          if (profileData) {
+             await supabase.from('profiles').update({ balance: latestBalance }).eq('id', user.id);
+          } else {
+             await supabase.from('profiles').insert({ id: user.id, email: userEmail, balance: latestBalance });
+          }
+
+          setBalance(latestBalance);
+
+          let currentTxns = JSON.parse(localStorage.getItem('ducky_transactions') || "[]");
+          const newTxn = { id: "TXN-" + Math.floor(100000 + Math.random() * 900000), type: "deposit", amount: "+" + amountToAdd.toLocaleString('vi-VN') + "đ", date: new Date().toLocaleString('vi-VN'), status: "success", description: "Nạp tiền qua PayOS" };
+          currentTxns = [newTxn, ...currentTxns];
+          localStorage.setItem('ducky_transactions', JSON.stringify(currentTxns));
+          localStorage.removeItem('ducky_pending_amount');
+          isProcessed = true;
+          alert(`✅ Nạp thành công ${amountToAdd.toLocaleString('vi-VN')}đ vào ví!`);
+        }
+
+        // B. Nhận diện khách Mua Key bằng QR
+        const pendingOrderStr = localStorage.getItem('ducky_pending_qr_order');
+        if (pendingOrderStr) {
+          const pendingOrder = JSON.parse(pendingOrderStr);
+          const { data: freshKeys } = await supabase.from('ducky_keys').select('*').eq('status', 'available');
+          const keysToAssign = (freshKeys || []).filter((k:any) => {
             const kid = String(k.package_id || k.packageId);
             const pid = String(pendingOrder.id);
             if (kid === pid) return true;
@@ -112,25 +156,21 @@ export function Products() {
             const assignedKey = keysToAssign[0];
             await supabase.from('ducky_keys').update({ status: 'sold' }).eq('id', assignedKey.id);
             
-            const orderId = "ORD-" + Math.floor(10000 + Math.random() * 90000);
-            const dateStr = new Date().toLocaleString('vi-VN');
-
-            // 1. Tạo Đơn hàng
-            const newOrder = { id: orderId, product: `Ducky Cheat AOV VIP (${pendingOrder.name})`, amount: pendingOrder.price.toLocaleString() + "đ", status: "completed", date: dateStr, key: assignedKey.key_code };
+            const newOrder = { id: "ORD-" + Math.floor(10000 + Math.random() * 90000), product: `Ducky Cheat AOV VIP (${pendingOrder.name})`, amount: pendingOrder.price.toLocaleString() + "đ", status: "completed", date: new Date().toLocaleString('vi-VN'), key: assignedKey.key_code };
             localStorage.setItem('ducky_orders', JSON.stringify([newOrder, ...JSON.parse(localStorage.getItem('ducky_orders') || "[]")]));
-
-            // 2. 💥 TẠO LỊCH SỬ GIAO DỊCH KHI THANH TOÁN QR
-            const newTxn = { id: "TXN-" + Math.floor(100000 + Math.random() * 900000), type: "purchase", amount: "-" + pendingOrder.price.toLocaleString('vi-VN') + "đ", date: dateStr, status: "success", description: `Mua Ducky Cheat AOV VIP (${pendingOrder.name}) qua QR` };
+            
+            const newTxn = { id: "TXN-" + Math.floor(100000 + Math.random() * 900000), type: "purchase", amount: "-" + pendingOrder.price.toLocaleString('vi-VN') + "đ", date: new Date().toLocaleString('vi-VN'), status: "success", description: `Mua Ducky Cheat (${pendingOrder.name}) qua QR` };
             let savedTxns = JSON.parse(localStorage.getItem('ducky_transactions') || "[]");
             localStorage.setItem('ducky_transactions', JSON.stringify([newTxn, ...savedTxns]));
 
             localStorage.removeItem('ducky_pending_qr_order');
-            
-            window.history.replaceState({}, '', window.location.pathname);
-            alert("Thanh toán thành công! Key đã sẵn sàng trong mục đơn hàng.");
+            isProcessed = true;
+            alert("✅ Thanh toán thành công! Key đã sẵn sàng trong mục đơn hàng.");
             navigate('/orders');
           }
         }
+
+        if (isProcessed) window.history.replaceState({}, document.title, window.location.pathname);
       }
     };
     loadData();
@@ -214,7 +254,6 @@ export function Products() {
       }
       const newBalance = balance - finalPrice;
       if (userId) {
-        // BẢO VỆ CHẶT CẬP NHẬT VÍ KHI MUA BẰNG VÍ
         const { data: checkProfile } = await supabase.from('profiles').select('id').eq('id', userId).maybeSingle();
         if (checkProfile) {
           await supabase.from('profiles').update({ balance: newBalance }).eq('id', userId);
