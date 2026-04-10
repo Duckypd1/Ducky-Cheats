@@ -5,7 +5,8 @@ import { supabase } from '../lib/supabase';
 export function ProductsManager() {
   const [products, setProducts] = useState<any[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [formData, setFormData] = useState<any>({ id: null, name: "", price: 0, popular: false });
+  // THÊM ctvPrice VÀO TRẠNG THÁI MẶC ĐỊNH
+  const [formData, setFormData] = useState<any>({ id: null, name: "", price: 0, ctvPrice: 0, popular: false });
   const [loading, setLoading] = useState(false);
 
   const fetchPackages = async () => {
@@ -13,7 +14,6 @@ export function ProductsManager() {
     if (data && data.length > 0) {
       setProducts(data);
     } else {
-      // TỰ ĐỘNG TẠO GÓI CHUẨN ĐỂ KHÔNG BỊ LỖI ID
       const defaultPkgs = [
         { id: "1d", name: "1 Ngày", price: 20000, ctv_price: 15000, popular: false },
         { id: "7d", name: "7 Ngày", price: 100000, ctv_price: 70000, popular: true },
@@ -30,9 +30,10 @@ export function ProductsManager() {
 
   const handleOpenModal = (product: any = null) => {
     if (product) {
-      setFormData(product);
+      // Load đúng giá CTV lên form
+      setFormData({ ...product, ctvPrice: product.ctv_price || product.ctvPrice || 0 });
     } else {
-      setFormData({ id: null, name: "", price: 0, popular: false });
+      setFormData({ id: null, name: "", price: 0, ctvPrice: 0, popular: false });
     }
     setIsModalOpen(true);
   };
@@ -48,7 +49,7 @@ export function ProductsManager() {
         id: formData.id || Date.now().toString(),
         name: formData.name,
         price: formData.price,
-        ctv_price: Math.floor(formData.price * 0.7),
+        ctv_price: formData.ctvPrice || Math.floor(formData.price * 0.7), // LẤY GIÁ CTV TỪ Ô NHẬP, nếu trống thì lấy 70%
         popular: formData.popular || false
       };
       const { error } = await supabase.from('ducky_packages').upsert(payload);
@@ -87,7 +88,8 @@ export function ProductsManager() {
           <thead className="bg-gray-50 border-b border-gray-100">
             <tr>
               <th className="p-4 text-xs font-bold text-gray-400 uppercase">Tên gói cheat</th>
-              <th className="p-4 text-xs font-bold text-gray-400 uppercase">Giá bán</th>
+              <th className="p-4 text-xs font-bold text-gray-400 uppercase">Giá gốc</th>
+              <th className="p-4 text-xs font-bold text-gray-400 uppercase">Giá CTV</th>
               <th className="p-4 text-xs font-bold text-gray-400 uppercase text-center">Trạng thái</th>
               <th className="p-4 text-xs font-bold text-gray-400 uppercase text-right">Thao tác</th>
             </tr>
@@ -97,6 +99,7 @@ export function ProductsManager() {
               <tr key={p.id} className="hover:bg-gray-50/50 transition-colors">
                 <td className="p-4 font-bold text-gray-900 text-sm">Ducky Cheat AOV VIP ({p.name})</td>
                 <td className="p-4 font-bold text-indigo-600 text-sm">{Number(p.price).toLocaleString('vi-VN')}đ</td>
+                <td className="p-4 font-bold text-rose-500 text-sm">{Number(p.ctv_price || p.ctvPrice || 0).toLocaleString('vi-VN')}đ</td>
                 <td className="p-4 text-center">
                   <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-green-50 text-green-600 text-xs font-bold border border-green-100">
                     <CheckCircle2 className="w-3 h-3" /> Đang bán
@@ -125,8 +128,8 @@ export function ProductsManager() {
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setIsModalOpen(false)}></div>
-          <div className="bg-white rounded-3xl w-full max-w-md relative z-10 shadow-xl overflow-hidden flex flex-col">
-            <div className="p-6 border-b border-gray-100 flex items-center justify-between">
+          <div className="bg-white rounded-3xl w-full max-w-md relative z-10 shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-6 border-b border-gray-100 flex items-center justify-between shrink-0">
               <h3 className="text-xl font-bold text-[#111827]">
                 {formData.id ? "Chỉnh sửa gói" : "Thêm gói mới"}
               </h3>
@@ -138,7 +141,7 @@ export function ProductsManager() {
               </button>
             </div>
             
-            <div className="p-6 space-y-5">
+            <div className="p-6 space-y-5 overflow-y-auto">
               <div>
                 <label className="block text-xs font-bold text-gray-400 uppercase mb-2 ml-1">Tên gói (VD: 1 Ngày)</label>
                 <input 
@@ -151,13 +154,25 @@ export function ProductsManager() {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-400 uppercase mb-2 ml-1">Giá bán (VNĐ)</label>
+                <label className="block text-xs font-bold text-gray-400 uppercase mb-2 ml-1">Giá bán gốc (VNĐ)</label>
                 <input 
                   type="number" 
                   value={formData.price || ""}
                   onChange={(e) => setFormData({...formData, price: Number(e.target.value)})}
                   placeholder="20000"
                   className="w-full bg-gray-50 border border-gray-100 text-gray-900 text-sm rounded-2xl focus:ring-2 focus:ring-indigo-100 focus:border-indigo-400 block p-3.5 outline-none font-bold text-indigo-600"
+                />
+              </div>
+
+              {/* Ô NHẬP GIÁ CTV */}
+              <div>
+                <label className="block text-xs font-bold text-gray-400 uppercase mb-2 ml-1">Giá Đại Lý / CTV (VNĐ)</label>
+                <input 
+                  type="number" 
+                  value={formData.ctvPrice || ""}
+                  onChange={(e) => setFormData({...formData, ctvPrice: Number(e.target.value)})}
+                  placeholder="15000"
+                  className="w-full bg-gray-50 border border-gray-100 text-gray-900 text-sm rounded-2xl focus:ring-2 focus:ring-rose-100 focus:border-rose-400 block p-3.5 outline-none font-bold text-rose-500"
                 />
               </div>
               
@@ -172,7 +187,7 @@ export function ProductsManager() {
               </label>
             </div>
 
-            <div className="p-6 border-t border-gray-100 bg-gray-50/50">
+            <div className="p-6 border-t border-gray-100 bg-gray-50/50 shrink-0">
               <button 
                 onClick={handleSave}
                 disabled={loading}

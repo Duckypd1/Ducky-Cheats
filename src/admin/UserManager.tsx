@@ -10,32 +10,39 @@ export function UserManager() {
   const [ctvEmail, setCtvEmail] = useState("");
   const [ctvLoading, setCtvLoading] = useState(false);
 
-  // --- GIỮ NGUYÊN: Load danh sách Packages để làm danh sách nhập giá ---
   const [packages, setPackages] = useState<any[]>([]);
 
+  // 💥 FIX LỖI ĐỒNG BỘ: Ép hệ thống kéo danh sách gói trực tiếp từ Đám mây Supabase
   useEffect(() => {
-    const savedPackages = localStorage.getItem('ducky_packages');
-    if (savedPackages) {
-      setPackages(JSON.parse(savedPackages));
-    } else {
-      setPackages([
-        { id: "1d", name: "1 Ngày", price: 20000, ctvPrice: 15000 },
-        { id: "7d", name: "7 Ngày", price: 100000, ctvPrice: 70000 },
-        { id: "30d", name: "30 Ngày", price: 300000, ctvPrice: 200000 },
-      ]);
-    }
+    const fetchPackages = async () => {
+      try {
+        const { data, error } = await supabase.from('ducky_packages').select('*').order('price', { ascending: true });
+        if (error) throw error;
+        
+        if (data && data.length > 0) {
+          setPackages(data);
+        } else {
+          setPackages([
+            { id: "1d", name: "1 Ngày", price: 20000, ctvPrice: 15000 },
+            { id: "7d", name: "7 Ngày", price: 100000, ctvPrice: 70000 },
+            { id: "30d", name: "30 Ngày", price: 300000, ctvPrice: 200000 },
+          ]);
+        }
+      } catch (err) {
+        console.error("Lỗi tải danh sách gói:", err);
+      }
+    };
+    
+    fetchPackages();
   }, []);
 
-  // --- STATE CHO CHỈNH TÊN & GIÁ TỪNG SẢN PHẨM ---
   const [searchEmail, setSearchEmail] = useState("");
   const [foundUser, setFoundUser] = useState<any>(null);
   const [editName, setEditName] = useState("");
   
-  // THÊM MỚI: State lưu trữ bảng giá riêng dạng Object { "1d": 12000, "7d": 50000 }
   const [editCustomPrices, setEditCustomPrices] = useState<Record<string, any>>({}); 
   const [updateLoading, setUpdateLoading] = useState(false);
 
-  // --- GIỮ NGUYÊN: HÀM CỘNG TIỀN ---
   const handleAddBalance = async () => {
     if (!email || !amount) return;
     setLoading(true);
@@ -45,7 +52,7 @@ export function UserManager() {
         .from('profiles')
         .select('id, balance')
         .eq('email', email.trim())
-        .single();
+        .maybeSingle(); // Fix lỗi crash nếu không tìm thấy
 
       if (searchError || !userProfile) {
         alert(`❌ Không tìm thấy email: ${email}\n\nLý do: Khách hàng này chưa từng đăng nhập vào web, hoặc họ chưa bấm vào trang Ví Tiền để hệ thống lưu email.`);
@@ -75,7 +82,6 @@ export function UserManager() {
     }
   };
 
-  // --- GIỮ NGUYÊN: HÀM SET CTV ---
   const handleSetRole = async (newRole: string) => {
     if (!ctvEmail) return;
     setCtvLoading(true);
@@ -85,7 +91,7 @@ export function UserManager() {
         .from('profiles')
         .select('id')
         .eq('email', ctvEmail.trim())
-        .single();
+        .maybeSingle();
 
       if (searchError || !userProfile) {
         alert(`❌ Không tìm thấy email: ${ctvEmail}`);
@@ -113,14 +119,13 @@ export function UserManager() {
     }
   };
 
-  // --- HÀM TÌM KIẾM VÀ CẬP NHẬT USER VIP ---
   const handleSearchUser = async () => {
     if (!searchEmail) return;
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
       .eq('email', searchEmail.trim())
-      .single();
+      .maybeSingle();
     
     if (error || !data) {
       alert("Không tìm thấy khách hàng này!");
@@ -128,12 +133,9 @@ export function UserManager() {
     }
     setFoundUser(data);
     setEditName(data.display_name || "");
-    
-    // Load bảng giá riêng từ cột custom_prices (JSONB)
     setEditCustomPrices(data.custom_prices || {}); 
   };
 
-  // Hàm xử lý khi gõ giá mới cho từng gói
   const handlePriceChange = (pkgId: string, value: string) => {
     setEditCustomPrices(prev => ({
       ...prev,
@@ -145,7 +147,6 @@ export function UserManager() {
     if (!foundUser) return;
     setUpdateLoading(true);
     
-    // Lọc bỏ các giá trị rỗng trước khi lưu
     const cleanPrices: Record<string, number> = {};
     Object.keys(editCustomPrices).forEach(key => {
       if (editCustomPrices[key] !== "") {
@@ -158,7 +159,7 @@ export function UserManager() {
         .from('profiles')
         .update({
           display_name: editName,
-          custom_prices: cleanPrices // Lưu Object giá riêng lên Supabase
+          custom_prices: cleanPrices 
         })
         .eq('id', foundUser.id);
       
@@ -306,7 +307,7 @@ export function UserManager() {
                     <div key={pkg.id} className="flex flex-col gap-1.5 pb-3 border-b border-gray-50 last:border-0 last:pb-0">
                       <div className="flex justify-between items-center">
                         <span className="font-semibold text-gray-700 text-sm">{pkg.name}</span>
-                        <span className="text-[10px] text-gray-400">Giá gốc: {pkg.price.toLocaleString()}đ</span>
+                        <span className="text-[10px] text-gray-400">Giá gốc: {Number(pkg.price).toLocaleString()}đ</span>
                       </div>
                       <div className="relative w-full">
                         <Tag className="absolute left-3 top-2.5 w-3.5 h-3.5 text-gray-400"/>
