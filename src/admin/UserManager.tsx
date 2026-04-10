@@ -16,7 +16,11 @@ export function UserManager() {
   useEffect(() => {
     const fetchPackages = async () => {
       try {
-        const { data, error } = await supabase.from('ducky_packages').select('*').order('price', { ascending: true });
+        const { data, error } = await supabase
+          .from('ducky_packages')
+          .select('*')
+          .order('price', { ascending: true });
+          
         if (error) throw error;
         
         if (data && data.length > 0) {
@@ -52,7 +56,7 @@ export function UserManager() {
         .from('profiles')
         .select('id, balance')
         .eq('email', email.trim())
-        .maybeSingle(); // Fix lỗi crash nếu không tìm thấy
+        .maybeSingle();
 
       if (searchError || !userProfile) {
         alert(`❌ Không tìm thấy email: ${email}\n\nLý do: Khách hàng này chưa từng đăng nhập vào web, hoặc họ chưa bấm vào trang Ví Tiền để hệ thống lưu email.`);
